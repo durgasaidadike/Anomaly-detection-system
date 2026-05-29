@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import numpy as np
-
+from database import save_event
 from model import train_models, get_scores
 from utils import normalize_score, calculate_weighted_score, get_risk_label
 from decision import get_action
@@ -74,7 +74,7 @@ def analyze_event():
         "risk_level": risk_label,
         "recommended_action": action
     }
-
+    save_event(response)
     return jsonify(response)
 
 
