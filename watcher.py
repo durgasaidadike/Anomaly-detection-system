@@ -1,3 +1,5 @@
+from event_filter import should_ignore, build_event
+from log_entry import create_log_record
 import os
 import time
 import requests
@@ -35,27 +37,20 @@ class WatchHandler(FileSystemEventHandler):
         moved_count = 0
 
         for item in recent_events:
-
             unique_files.add(item["file_path"])
             total_change_size += item["change_size"]
 
             if item["event_type"] == "CREATED":
                 created_count += 1
-
             elif item["event_type"] == "MODIFIED":
                 modified_count += 1
-
             elif item["event_type"] == "DELETED":
                 deleted_count += 1
-
             elif item["event_type"] == "MOVED":
                 moved_count += 1
 
         current_hour = time.localtime().tm_hour
-
-        unusual_time_access = (
-            1 if current_hour < 6 or current_hour > 22 else 0
-        )
+        unusual_time_access = 1 if current_hour < 6 or current_hour > 22 else 0
 
         payload = {
             "file_count": len(unique_files),
@@ -74,9 +69,19 @@ class WatchHandler(FileSystemEventHandler):
         return payload, extra_info
 
     def record_event(self, event_type, file_path):
+        if should_ignore(file_path):
+            print(f"\n[IGNORED] {file_path}")
+            return
+
+        event = build_event(event_type, file_path)
+        record = create_log_record(event)
+
+        print("\n========== LOG ENTRY ==========")
+        for key, value in record.items():
+            print(f"{key}: {value}")
+        print("================================")
 
         try:
-
             if os.path.exists(file_path) and os.path.isfile(file_path):
                 change_size = os.path.getsize(file_path)
             else:
@@ -92,7 +97,6 @@ class WatchHandler(FileSystemEventHandler):
             recent_events.append(event_info)
 
             payload, extra_info = self.build_payload()
-
             payload["event_type"] = event_type
             payload["file_path"] = file_path
 
@@ -109,17 +113,14 @@ class WatchHandler(FileSystemEventHandler):
 
             try:
                 print("Response JSON:", response.json())
-
             except Exception:
                 print("Raw Response:", response.text)
 
         except requests.exceptions.ConnectionError:
-
             print(f"\n[{event_type}] {file_path}")
             print("Error: Flask API is not running.")
 
         except Exception as e:
-
             print(f"\n[{event_type}] {file_path}")
             print("Error:", str(e))
 
@@ -141,13 +142,11 @@ class WatchHandler(FileSystemEventHandler):
 
 
 if __name__ == "__main__":
-
     if not os.path.exists(WATCHED_FOLDER):
         print(f"Folder does not exist: {WATCHED_FOLDER}")
         exit()
 
     event_handler = WatchHandler()
-
     observer = Observer()
 
     observer.schedule(
@@ -157,19 +156,15 @@ if __name__ == "__main__":
     )
 
     print(f"Watching folder: {WATCHED_FOLDER}")
-    print(
-        f"Tracking behavior for last {TIME_WINDOW_SECONDS} seconds..."
-    )
+    print(f"Tracking behavior for last {TIME_WINDOW_SECONDS} seconds...")
 
     observer.start()
 
     try:
-
         while True:
             time.sleep(1)
 
     except KeyboardInterrupt:
-
         print("\nStopping watcher...")
         observer.stop()
 
