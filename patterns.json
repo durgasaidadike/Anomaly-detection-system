@@ -1,0 +1,160 @@
+{
+    "event_sequence": [
+        "CREATED",
+        "MOVED",
+        "MODIFIED",
+        "DELETED",
+        "CREATED",
+        "MOVED",
+        "MOVED",
+        "MOVED",
+        "CREATED",
+        "MOVED",
+        "DELETED"
+    ],
+    "operation_stats": {
+        "CREATED": 3,
+        "MODIFIED": 1,
+        "DELETED": 2,
+        "MOVED": 5,
+        "COPIED": 0
+    },
+    "create_history": [
+        {
+            "event_type": "CREATED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "CREATED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "CREATED",
+            "extension": ".pptx",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        }
+    ],
+    "modify_history": [
+        {
+            "event_type": "MODIFIED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 41
+        }
+    ],
+    "delete_history": [
+        {
+            "event_type": "DELETED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "DELETED",
+            "extension": ".ppt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        }
+    ],
+    "move_history": [
+        {
+            "event_type": "MOVED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "MOVED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "MOVED",
+            "extension": ".txt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "MOVED",
+            "extension": ".ppt",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        },
+        {
+            "event_type": "MOVED",
+            "extension": ".pptx",
+            "directory": "C:\\projects\\watched-folder",
+            "hour": 12,
+            "size": 0
+        }
+    ],
+    "copy_history": [],
+    "extension_history": [
+        ".txt",
+        ".txt",
+        ".txt",
+        ".txt",
+        ".txt",
+        ".txt",
+        ".txt",
+        ".ppt",
+        ".pptx",
+        ".pptx",
+        ".ppt"
+    ],
+    "directory_history": [
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder",
+        "C:\\projects\\watched-folder"
+    ],
+    "access_hour_history": [
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12,
+        12
+    ],
+    "file_size_history": [
+        0,
+        0,
+        41,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+    ]
+}

@@ -1,11 +1,16 @@
 from event_filter import should_ignore, build_event
 from log_entry import create_log_record
+from pattern_repository import store_pattern
 import os
 import time
 import requests
 from collections import deque
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from pattern_repository import (
+    store_pattern,
+    get_pattern_summary
+)
 
 WATCHED_FOLDER = r"C:\projects\watched-folder"
 API_URL = "http://127.0.0.1:5000/analyze-event"
@@ -75,7 +80,7 @@ class WatchHandler(FileSystemEventHandler):
 
         event = build_event(event_type, file_path)
         record = create_log_record(event)
-
+        store_pattern(record)
         print("\n========== LOG ENTRY ==========")
         for key, value in record.items():
             print(f"{key}: {value}")

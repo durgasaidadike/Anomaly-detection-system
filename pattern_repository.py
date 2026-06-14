@@ -1,3 +1,4 @@
+from pattern_store import save_patterns
 from collections import deque
 
 # =====================================
@@ -55,6 +56,7 @@ def store_pattern(log_record):
     directory = log_record.get("directory", "")
     hour = log_record.get("event_hour", 0)
     size = log_record.get("file_size", 0)
+    save_repository_snapshot()
 
     # ---------------------------------
     # Event Sequence
@@ -150,3 +152,9 @@ def reset_patterns():
     directory_history.clear()
     access_hour_history.clear()
     file_size_history.clear()
+
+def save_repository_snapshot():
+
+    snapshot = get_pattern_summary()
+
+    save_patterns(snapshot)
