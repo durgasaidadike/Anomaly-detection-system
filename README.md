@@ -42,41 +42,39 @@ The system aims to:
 The system follows a layered architecture where each component has a dedicated responsibility.
 
 ```text
-Filesystem Activity
-        │
-        ▼
- Event Monitor
-        │
-        ▼
-Behavior Analyzer
-        │
-        ▼
-Behavior Pattern Construction
-        │
-        ▼
-Behavior Intelligence
-(Similarity • Drift • Confidence)
-        │
-        ▼
-Feature Extraction
-        │
-        ▼
-Machine Learning Engine
-        │
-        ▼
-Decision Engine
-        │
- ┌──────┴──────────────┐
- │                     │
- ▼                     ▼
-Recovery          Backend Services
- │                     │
- └──────────────┬──────┘
-                ▼
-            MongoDB
-                │
-                ▼
-           Monitoring Dashboard
+                 Filesystem Activity
+                        │
+                        ▼
+                 Event Monitor
+                        │
+                        ▼
+                 Event Filtering
+                        │
+                        ▼
+               Behavior Analysis
+                        │
+                        ▼
+          Behavior Pattern Construction
+                        │
+                        ▼
+              Feature Extraction
+                        │
+                        ▼
+            Machine Learning Engine
+                        │
+                        ▼
+               Decision Engine
+                        │
+              ┌─────────┴─────────┐
+              ▼                   ▼
+         Recovery          Backend Services
+              │                   │
+              └─────────┬─────────┘
+                        ▼
+                   MongoDB
+                        │
+                        ▼
+             Monitoring Dashboard
 ```
 
 ---
