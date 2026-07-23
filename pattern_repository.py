@@ -1,5 +1,5 @@
-from pattern_store import save_patterns
 from collections import deque
+from pattern_store import save_patterns
 
 # =====================================
 # Repository Limits
@@ -9,13 +9,11 @@ EVENT_SEQUENCE_MAX = 100
 GLOBAL_HISTORY_MAX = 1000
 OPERATION_HISTORY_MAX = 500
 
-
 # =====================================
 # Event Sequence Storage
 # =====================================
 
 event_sequence = deque(maxlen=EVENT_SEQUENCE_MAX)
-
 
 # =====================================
 # Operation Statistics
@@ -26,9 +24,10 @@ operation_stats = {
     "MODIFIED": 0,
     "DELETED": 0,
     "MOVED": 0,
+    "RENAMED": 0,
+    "EXTENSION_CHANGED": 0,
     "COPIED": 0
 }
-
 
 # =====================================
 # Behavioral Histories
@@ -38,6 +37,8 @@ create_history = deque(maxlen=OPERATION_HISTORY_MAX)
 modify_history = deque(maxlen=OPERATION_HISTORY_MAX)
 delete_history = deque(maxlen=OPERATION_HISTORY_MAX)
 move_history = deque(maxlen=OPERATION_HISTORY_MAX)
+rename_history = deque(maxlen=OPERATION_HISTORY_MAX)
+extension_change_history = deque(maxlen=OPERATION_HISTORY_MAX)
 copy_history = deque(maxlen=OPERATION_HISTORY_MAX)
 
 extension_history = deque(maxlen=GLOBAL_HISTORY_MAX)
@@ -45,18 +46,17 @@ directory_history = deque(maxlen=GLOBAL_HISTORY_MAX)
 access_hour_history = deque(maxlen=GLOBAL_HISTORY_MAX)
 file_size_history = deque(maxlen=GLOBAL_HISTORY_MAX)
 
-
 # =====================================
 # Store Pattern
 # =====================================
 
 def store_pattern(log_record):
+
     event_type = log_record.get("event_type", "UNKNOWN")
     extension = log_record.get("file_extension", "").lower()
     directory = log_record.get("directory", "")
     hour = log_record.get("event_hour", 0)
     size = log_record.get("file_size", 0)
-    save_repository_snapshot()
 
     # ---------------------------------
     # Event Sequence
@@ -65,7 +65,7 @@ def store_pattern(log_record):
     event_sequence.append(event_type)
 
     # ---------------------------------
-    # Operation Stats
+    # Operation Statistics
     # ---------------------------------
 
     if event_type in operation_stats:
@@ -81,7 +81,7 @@ def store_pattern(log_record):
     file_size_history.append(size)
 
     # ---------------------------------
-    # Contextual Record
+    # Contextual Behavior Record
     # ---------------------------------
 
     behavior_record = {
@@ -108,35 +108,51 @@ def store_pattern(log_record):
     elif event_type == "MOVED":
         move_history.append(behavior_record)
 
+    elif event_type == "RENAMED":
+        rename_history.append(behavior_record)
+
+    elif event_type == "EXTENSION_CHANGED":
+        extension_change_history.append(behavior_record)
+
     elif event_type == "COPIED":
         copy_history.append(behavior_record)
 
+    # ---------------------------------
+    # Save Repository Snapshot
+    # ---------------------------------
+
+    save_repository_snapshot()
 
 # =====================================
 # Get Repository Summary
 # =====================================
 
 def get_pattern_summary():
+
     return {
         "event_sequence": list(event_sequence),
         "operation_stats": dict(operation_stats),
+
         "create_history": list(create_history),
         "modify_history": list(modify_history),
         "delete_history": list(delete_history),
         "move_history": list(move_history),
+        "rename_history": list(rename_history),
+        "extension_change_history": list(extension_change_history),
         "copy_history": list(copy_history),
+
         "extension_history": list(extension_history),
         "directory_history": list(directory_history),
         "access_hour_history": list(access_hour_history),
         "file_size_history": list(file_size_history)
     }
 
-
 # =====================================
 # Reset Repository
 # =====================================
 
 def reset_patterns():
+
     event_sequence.clear()
 
     for key in operation_stats:
@@ -146,6 +162,8 @@ def reset_patterns():
     modify_history.clear()
     delete_history.clear()
     move_history.clear()
+    rename_history.clear()
+    extension_change_history.clear()
     copy_history.clear()
 
     extension_history.clear()
@@ -153,8 +171,11 @@ def reset_patterns():
     access_hour_history.clear()
     file_size_history.clear()
 
+# =====================================
+# Save Repository Snapshot
+# =====================================
+
 def save_repository_snapshot():
 
     snapshot = get_pattern_summary()
-
     save_patterns(snapshot)
