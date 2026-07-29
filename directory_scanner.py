@@ -1,90 +1,249 @@
+import logging
 import os
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, TypedDict
 
 from database import save_baseline
 
-WATCHED_FOLDER = r"C:\projects\watched-folder"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 
-def calculate_hash(file_path):
+class EntryMetadata(TypedDict):
+    entry_name: str
+    absolute_path: str
+    relative_path: str
+    parent_directory: str
+    entry_type: str
+    extension: str
+    size: int
+    created_time: str
+    modified_time: str
+    accessed_time: str
+    is_symlink: bool
+    baseline: bool
+    sha256: Optional[str]
 
-    sha256 = hashlib.sha256()
 
-    try:
-        with open(file_path, "rb") as file:
+class DirectoryScanner:
+    """
+    PRISM Module 002.xx
+    Directory Scanner
 
-            while chunk := file.read(4096):
-                sha256.update(chunk)
+    Responsible for:
+    - Directory validation
+    - Recursive filesystem discovery
+    - Metadata collection
+    - Initial snapshot generation
 
-        return sha256.hexdigest()
+    This module performs initialization only.
+    It does not monitor live filesystem changes.
+    """
 
-    except Exception as e:
-        print(f"Hash Error: {e}")
-        return None
+    def __init__(self, directories: Optional[List[str]] = None):
+        self.directories = directories or []
+        self.snapshot = []
+        self.valid_directories = set()
+        self.invalid_directories = set()
+        self.total_files = 0
+        self.total_directories = 0
 
+    @staticmethod
+    def calculate_hash(file_path: str) -> Optional[str]:
+        sha256 = hashlib.sha256()
 
-def scan_directory(folder_path):
+        try:
+            with open(file_path, "rb") as file:
+                while chunk := file.read(4096):
+                    sha256.update(chunk)
 
-    total_files = 0
+            return sha256.hexdigest()
 
-    for root, dirs, files in os.walk(folder_path):
+        except (OSError, PermissionError):
+            return None
 
-        for file in files:
+    def validate_directory(
+        self,
+        directory_path: str
+    ) -> Tuple[bool, str, str]:
+        """
+        Validate a directory before scanning.
 
-            try:
+        Returns:
+            (is_valid, status, normalized_path)
+        """
+        normalized = os.path.abspath(directory_path)
 
-                full_path = os.path.join(root, file)
+        if normalized in self.valid_directories:
+            return False, "DUPLICATE_DIRECTORY", normalized
 
-                stats = os.stat(full_path)
+        if not os.path.exists(normalized):
+            return False, "DIRECTORY_NOT_FOUND", normalized
 
-                file_metadata = {
+        if not os.path.isdir(normalized):
+            return False, "NOT_A_DIRECTORY", normalized
 
-                    "file_name": file,
+        if not os.access(normalized, os.R_OK):
+            return False, "PERMISSION_DENIED", normalized
 
-                    "file_path": full_path,
+        self.valid_directories.add(normalized)
 
-                    "file_size": stats.st_size,
+        return True, "VALID", normalized
 
-                    "created_time":
-                    datetime.fromtimestamp(
-                        stats.st_ctime
-                    ).isoformat(),
+    def build_entry_metadata(
+        self,
+        root_path: str,
+        full_path: str,
+        is_directory: bool
+    ) -> EntryMetadata:
+        """
+        Build metadata for a filesystem entry.
+        """
+        stats = os.stat(full_path, follow_symlinks=False)
+        path_obj = Path(full_path)
 
-                    "modified_time":
-                    datetime.fromtimestamp(
-                        stats.st_mtime
-                    ).isoformat(),
+        return {
+            "entry_name": path_obj.name,
+            "absolute_path": str(path_obj.resolve(strict=False)),
+            "relative_path": os.path.relpath(full_path, root_path),
+            "parent_directory": str(path_obj.parent),
+            "entry_type": "DIRECTORY" if is_directory else "FILE",
+            "extension": "" if is_directory else path_obj.suffix.lower(),
+            "size": 0 if is_directory else stats.st_size,
+            "created_time": datetime.fromtimestamp(
+                stats.st_ctime,
+                tz=timezone.utc
+            ).isoformat(),
+            "modified_time": datetime.fromtimestamp(
+                stats.st_mtime,
+                tz=timezone.utc
+            ).isoformat(),
+            "accessed_time": datetime.fromtimestamp(
+                stats.st_atime,
+                tz=timezone.utc
+            ).isoformat(),
+            "is_symlink": os.path.islink(full_path),
+            "baseline": True,
+            "sha256": (
+                None
+                if is_directory
+                else self.calculate_hash(full_path)
+            )
+        }
 
-                    "sha256":
-                    calculate_hash(full_path),
+    def scan_directory(
+        self,
+        directory_path: str
+    ) -> Dict:
+        """
+        Recursively scan a directory and build its snapshot.
+        """
+        is_valid, status, normalized_path = self.validate_directory(directory_path)
 
-                    "baseline": True
+        snapshot = {
+            "root_directory": normalized_path,
+            "validation_status": status,
+            "scan_timestamp": datetime.now(timezone.utc).isoformat(),
+            "entries": [],
+            "total_files": 0,
+            "total_directories": 0,
+            "scan_errors": [],
+            "validation_results": {},
+            "watcher_registration": {
+                "directory": normalized_path,
+                "registered": False,
+                "registration_time": None
+            },
+            "initialization_complete": False
+        }
 
-                }
+        if not is_valid:
+            self.invalid_directories.add(normalized_path)
+            return snapshot
 
-                save_baseline(file_metadata)
+        for root, dirs, files in os.walk(normalized_path):
+            for directory_name in dirs:
+                full_path = os.path.join(root, directory_name)
 
-                total_files += 1
+                try:
+                    metadata = self.build_entry_metadata(
+                        normalized_path,
+                        full_path,
+                        True
+                    )
+                    snapshot["entries"].append(metadata)
+                    snapshot["total_directories"] += 1
+                    self.total_directories += 1
 
-                print(f"[BASELINE] {file}")
+                except Exception as e:
+                    logger.error(f"Failed to scan directory '{directory_name}': {e}")
 
-            except Exception as e:
+            for file_name in files:
+                full_path = os.path.join(root, file_name)
 
-                print(
-                    f"Error scanning {file}: {str(e)}"
-                )
+                try:
+                    metadata = self.build_entry_metadata(
+                        normalized_path,
+                        full_path,
+                        False
+                    )
+                    snapshot["entries"].append(metadata)
+                    snapshot["total_files"] += 1
+                    self.total_files += 1
+                    save_baseline(metadata)
+                    logger.info(f"Baseline created for file: {file_name}")
 
-    print("\n================================")
-    print(f"Baseline Created: {total_files}")
-    print("================================")
+                except Exception as e:
+                    logger.error(f"Failed to scan file '{file_name}': {e}")
+
+        self.snapshot.append(snapshot)
+        return snapshot
+
+    def scan(self) -> List[Dict]:
+        """
+        Scan every configured directory.
+        """
+        results = []
+
+        for directory in self.directories:
+            result = self.scan_directory(directory)
+            results.append(result)
+
+        return results
+
+    def get_statistics(self) -> Dict:
+        """
+        Return overall scan statistics.
+        """
+        return {
+            "directories_scanned": len(self.valid_directories),
+            "invalid_directories": len(self.invalid_directories),
+            "total_files": self.total_files,
+            "total_directories": self.total_directories,
+            "total_snapshots": len(self.snapshot)
+        }
 
 
 if __name__ == "__main__":
+    WATCHED_FOLDERS = [
+        r"C:\projects\watched-folder"
+    ]
 
-    if not os.path.exists(WATCHED_FOLDER):
+    scanner = DirectoryScanner(WATCHED_FOLDERS)
+    scanner.scan()
 
-        print("Watched folder not found.")
-        exit()
+    stats = scanner.get_statistics()
 
-    scan_directory(WATCHED_FOLDER)
+    print("\n========== PRISM DIRECTORY SCANNER ==========\n")
+    print(f"Directories Scanned : {stats['directories_scanned']}")
+    print(f"Invalid Directories : {stats['invalid_directories']}")
+    print(f"Total Directories   : {stats['total_directories']}")
+    print(f"Total Files         : {stats['total_files']}")
+    print(f"Snapshots Created   : {stats['total_snapshots']}")
+    print("\n=============================================\n")
