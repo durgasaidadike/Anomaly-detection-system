@@ -18,6 +18,6 @@ print("\n===== ANALYSIS RESULT =====\n")
 for key, value in result.items():
     print(f"{key}: {value}")
     # TODO:
-# Replace lifetime counts with
-# window-based behavioral baselines
-# in V3
+    # Replace lifetime counts with
+    # window-based behavioral baselines
+    # in V3

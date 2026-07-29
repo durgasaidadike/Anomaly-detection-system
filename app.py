@@ -125,13 +125,13 @@ def analyze_event():
             "recommended_action": action
         }
 
-       # try:
+        # try:
         #    save_event(response)
-        #except Exception as mongo_error:
-           # print(
-            #    "MongoDB Error:",
-           #     str(mongo_error)
-           # )
+        # except Exception as mongo_error:
+        #    print(
+        #        "MongoDB Error:",
+        #        str(mongo_error)
+        #    )
 
         return jsonify(response)
 
@@ -149,4 +149,4 @@ def analyze_event():
             "error": str(e)
         }), 500
 if __name__ == "__main__":
-     app.run(debug=True)
+    app.run(debug=True)
