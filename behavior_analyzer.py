@@ -1,109 +1,480 @@
-from behavior_profile_builder import build_behavior_profile
+from __future__ import annotations
+
+import logging
+from collections import Counter
+from typing import Any, Dict, List, Optional
+
+from session_models import Session, SessionMetadata
 
 
-def analyze_behavior(log_record, operation_frequency=0):
-    profile = build_behavior_profile()
+logger = logging.getLogger(__name__)
 
-    risk_score = 0
 
-    results = {
-        "extension_anomaly": False,
-        "directory_anomaly": False,
-        "time_anomaly": False,
-        "size_anomaly": False,
-        "delete_burst_anomaly": False,
-        "modify_burst_anomaly": False,
-        "operation_frequency_anomaly": False
-    }
+class BehaviorAnalyzer:
+    """
+    PRISM Module 04 - Behavior Analyzer.
 
-    current_event_type = log_record.get("event_type", "")
-    current_extension = log_record.get("file_extension", "").lower()
-    current_directory = log_record.get("directory", "")
-    current_hour = log_record.get("event_hour", 0)
-    current_size = log_record.get("file_size", 0)
+    Interprets completed or active user sessions and converts
+    filesystem activity into behavioral understanding.
 
-    # -------------------------
-    # Extension Check
-    # -------------------------
+    Responsibilities:
+    - Interpret session activity.
+    - Analyze behavioral context.
+    - Generate behavioral signals.
+    - Extract behavioral characteristics.
+    - Produce a session behavior summary.
 
-    common_extensions = [
-        ext for ext, count
-        in profile.get("common_extensions", [])
-    ]
+    This module does NOT:
+    - Perform ML inference.
+    - Make final anomaly decisions.
+    - Create final patterns.
+    - Persist behavioral history.
+    - Access MongoDB.
+    """
 
-    if common_extensions and current_extension not in common_extensions:
-        results["extension_anomaly"] = True
-        risk_score += 25
+    def __init__(
+        self,
+        observation_sink: Optional[Any] = None,
+    ):
+        """
+        Initialize the Behavior Analyzer.
 
-    # -------------------------
-    # Directory Check
-    # -------------------------
+        observation_sink is an optional downstream handoff
+        supplied by the orchestration layer.
+        """
+        self.observation_sink = observation_sink
 
-    common_directories = [
-        directory for directory, count
-        in profile.get("common_directories", [])
-    ]
+    def forward_observation(
+        self,
+        observation: Dict[str, Any],
+    ) -> bool:
+        """
+        Forward a behavioral observation to the downstream
+        Candidate Pattern Manager boundary.
 
-    if common_directories and current_directory not in common_directories:
-        results["directory_anomaly"] = True
-        risk_score += 25
+        Returns True when forwarding succeeds or when no sink
+        has been configured.
+        """
+        if self.observation_sink is None:
+            return True
 
-    # -------------------------
-    # Time Check
-    # -------------------------
+        try:
+            self.observation_sink(observation)
+            return True
 
-    common_hours = [
-        hour for hour, count
-        in profile.get("common_hours", [])
-    ]
+        except Exception:
+            logger.exception(
+                "Failed to forward behavioral observation for session '%s'.",
+                observation.get("session_id"),
+            )
+            return False
 
-    if common_hours and current_hour not in common_hours:
-        results["time_anomaly"] = True
-        risk_score += 25
+    def analyzeSession(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ) -> Dict[str, Any]:
+        """
+        Analyze a session and return behavioral understanding.
 
-    # -------------------------
-    # Size Check
-    # -------------------------
+        Partial behavioral information is returned whenever possible.
+        """
+        result: Dict[str, Any] = {
+            "session_id": self._get_session_id(session),
+            "behavioral_signals": [],
+            "behavioral_context": {},
+            "session_behavior_summary": {},
+        }
 
-    max_size = profile.get("max_file_size", 0)
+        try:
+            result["behavioral_context"] = self._interpret_context(
+                session,
+                metadata,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to interpret behavioral context for session '%s'.",
+                self._get_session_id(session),
+            )
 
-    if max_size > 0 and current_size > max_size:
-        results["size_anomaly"] = True
-        risk_score += 25
+        try:
+            result["behavioral_signals"] = self.generateBehaviorSignals(
+                session,
+                metadata,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to generate behavioral signals for session '%s'.",
+                self._get_session_id(session),
+            )
 
-    # -------------------------
-    # Delete Burst Check
-    # -------------------------
+        try:
+            result["session_behavior_summary"] = self.summarizeBehavior(
+                session,
+                metadata,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to summarize behavior for session '%s'.",
+                self._get_session_id(session),
+            )
 
-    delete_count = profile.get("delete_count", 0)
+        try:
+            self.forward_observation(result)
+        except Exception:
+            logger.exception(
+                "Unexpected error while forwarding observation for session '%s'.",
+                self._get_session_id(session),
+            )
 
-    if current_event_type == "DELETED" and delete_count > 0:
-        if operation_frequency > (delete_count * 2):
-            results["delete_burst_anomaly"] = True
-            risk_score += 20
+        return result
 
-    # -------------------------
-    # Modify Burst Check
-    # -------------------------
+    def _interpret_context(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ) -> Dict[str, Any]:
+        """
+        Extract behavioral context from the session.
 
-    modify_count = profile.get("modify_count", 0)
+        This method describes what happened during the session.
+        It does not determine whether the behavior is normal or
+        abnormal.
+        """
+        events = self._get_events(session)
 
-    if current_event_type == "MODIFIED" and modify_count > 0:
-        if operation_frequency > (modify_count * 2):
-            results["modify_burst_anomaly"] = True
-            risk_score += 20
+        context: Dict[str, Any] = {
+            "event_count": len(events),
+            "operation_types": [],
+            "unique_paths": 0,
+            "unique_extensions": [],
+            "directories": [],
+        }
 
-    # -------------------------
-    # Operation Frequency Check
-    # -------------------------
+        if not events:
+            context["session_state"] = "EMPTY"
+            return context
 
-    total_operations = profile.get("total_operations", 0)
+        operation_types = Counter()
+        paths = set()
+        extensions = set()
+        directories = set()
 
-    if total_operations > 0:
-        if operation_frequency > (total_operations * 2):
-            results["operation_frequency_anomaly"] = True
-            risk_score += 20
+        for event in events:
+            event_type = self._get_value(
+                event,
+                "event_type",
+                "operation_type",
+            )
 
-    results["risk_score"] = risk_score
+            if event_type:
+                operation_types[str(event_type)] += 1
 
-    return results
+            source_path = self._get_value(
+                event,
+                "source_path",
+                "file_path",
+            )
+
+            destination_path = self._get_value(
+                event,
+                "destination_path",
+            )
+
+            if source_path:
+                paths.add(str(source_path))
+
+            if destination_path:
+                paths.add(str(destination_path))
+
+            extension = self._get_value(
+                event,
+                "extension",
+                "file_extension",
+            )
+
+            if extension:
+                extensions.add(str(extension).lower())
+
+            directory = self._get_value(
+                event,
+                "directory",
+            )
+
+            if directory:
+                directories.add(str(directory))
+
+        context["operation_types"] = dict(operation_types)
+        context["unique_paths"] = len(paths)
+        context["unique_extensions"] = sorted(extensions)
+        context["directories"] = sorted(directories)
+        context["session_state"] = self._session_state(session)
+
+        return context
+
+    @staticmethod
+    def _get_events(session: Session) -> List[Any]:
+        """
+        Safely retrieve the events associated with a session.
+        """
+        events = getattr(session, "events", None)
+
+        if events is None:
+            return []
+
+        return list(events)
+
+    @staticmethod
+    def _get_value(
+        event: Any,
+        *field_names: str,
+    ) -> Any:
+        """
+        Read a field from either an object or mapping.
+
+        This keeps the analyzer tolerant of the normalized
+        event representation used by upstream modules.
+        """
+        for field_name in field_names:
+            if isinstance(event, dict):
+                if field_name in event:
+                    return event[field_name]
+
+            value = getattr(event, field_name, None)
+
+            if value is not None:
+                return value
+
+        return None
+
+    @staticmethod
+    def _session_state(session: Session) -> str:
+        """
+        Return the current session state from session metadata.
+        """
+        return BehaviorAnalyzer._get_session_status(session)
+
+    @staticmethod
+    def _get_session_id(session: Session) -> Optional[str]:
+        """
+        Safely retrieve the session identifier from session metadata.
+        """
+        metadata = getattr(session, "metadata", None)
+
+        if metadata is None:
+            return None
+
+        return getattr(metadata, "session_id", None)
+
+    @staticmethod
+    def _get_session_status(session: Session) -> str:
+        """
+        Safely retrieve the session status from session metadata.
+        """
+        metadata = getattr(session, "metadata", None)
+
+        if metadata is None:
+            return "UNKNOWN"
+
+        return str(
+            getattr(
+                metadata,
+                "status",
+                "UNKNOWN",
+            )
+        )
+
+    def generateBehaviorSignals(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate descriptive behavioral signals from a session.
+
+        Signals describe observable characteristics of the session.
+        They are not anomaly decisions or ML scores.
+        """
+        events = self._get_events(session)
+
+        if not events:
+            return [
+                {
+                    "signal_type": "EMPTY_SESSION",
+                    "value": True,
+                    "description": "Session contains no events.",
+                }
+            ]
+
+        signals: List[Dict[str, Any]] = []
+
+        operation_counts = Counter()
+        extensions = set()
+        directories = set()
+
+        for event in events:
+            event_type = self._get_value(
+                event,
+                "event_type",
+                "operation_type",
+            )
+
+            if event_type:
+                operation_counts[str(event_type)] += 1
+
+            extension = self._get_value(
+                event,
+                "extension",
+                "file_extension",
+            )
+
+            if extension:
+                extensions.add(str(extension).lower())
+
+            directory = self._get_value(
+                event,
+                "directory",
+            )
+
+            if directory:
+                directories.add(str(directory))
+
+        for operation_type, count in operation_counts.items():
+            signals.append(
+                {
+                    "signal_type": "OPERATION_ACTIVITY",
+                    "operation_type": operation_type,
+                    "count": count,
+                }
+            )
+
+        if len(extensions) == 1:
+            signals.append(
+                {
+                    "signal_type": "EXTENSION_CONCENTRATION",
+                    "extension_count": 1,
+                    "extensions": sorted(extensions),
+                }
+            )
+        elif len(extensions) > 1:
+            signals.append(
+                {
+                    "signal_type": "EXTENSION_DIVERSITY",
+                    "extension_count": len(extensions),
+                    "extensions": sorted(extensions),
+                }
+            )
+
+        if len(directories) == 1:
+            signals.append(
+                {
+                    "signal_type": "DIRECTORY_CONCENTRATION",
+                    "directory_count": 1,
+                }
+            )
+        elif len(directories) > 1:
+            signals.append(
+                {
+                    "signal_type": "DIRECTORY_DIVERSITY",
+                    "directory_count": len(directories),
+                }
+            )
+
+        if len(events) == 1:
+            signals.append(
+                {
+                    "signal_type": "SHORT_SESSION",
+                    "event_count": 1,
+                }
+            )
+
+        return signals
+
+    def summarizeBehavior(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build a compact behavioral summary for downstream processing.
+
+        The summary describes the session and does not make an
+        anomaly or risk decision.
+        """
+        events = self._get_events(session)
+
+        if not events:
+            return {
+                "session_id": self._get_session_id(session),
+                "event_count": 0,
+                "session_state": "EMPTY",
+                "primary_operations": [],
+                "characteristics": {},
+            }
+
+        operation_counts = Counter()
+        unique_paths = set()
+        unique_extensions = set()
+        unique_directories = set()
+
+        for event in events:
+            event_type = self._get_value(
+                event,
+                "event_type",
+                "operation_type",
+            )
+
+            if event_type:
+                operation_counts[str(event_type)] += 1
+
+            source_path = self._get_value(
+                event,
+                "source_path",
+                "file_path",
+            )
+
+            destination_path = self._get_value(
+                event,
+                "destination_path",
+            )
+
+            if source_path:
+                unique_paths.add(str(source_path))
+
+            if destination_path:
+                unique_paths.add(str(destination_path))
+
+            extension = self._get_value(
+                event,
+                "extension",
+                "file_extension",
+            )
+
+            if extension:
+                unique_extensions.add(str(extension).lower())
+
+            directory = self._get_value(
+                event,
+                "directory",
+            )
+
+            if directory:
+                unique_directories.add(str(directory))
+
+        primary_operations = [
+            operation
+            for operation, _ in operation_counts.most_common()
+        ]
+
+        return {
+            "session_id": self._get_session_id(session),
+            "event_count": len(events),
+            "session_state": self._session_state(session),
+            "primary_operations": primary_operations,
+            "characteristics": {
+                "operation_counts": dict(operation_counts),
+                "unique_paths": len(unique_paths),
+                "unique_extensions": sorted(unique_extensions),
+                "unique_directories": sorted(unique_directories),
+            },
+        }
