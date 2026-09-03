@@ -128,6 +128,53 @@ class CandidatePatternManager:
         except Exception:
             return pattern
 
+    def finalizePattern(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Finalize the active Candidate Pattern for a session.
+
+        Finalization converts a valid active Candidate Pattern into
+        a completed behavioral representation.
+
+        Empty or interrupted patterns are not finalized.
+
+        Persistence and historical storage are intentionally outside
+        this manager.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        if pattern.is_empty():
+            return None
+
+        if pattern.metadata.interrupted:
+            return None
+
+        previous_status = pattern.metadata.status
+        previous_complete = pattern.metadata.complete
+        previous_finalized_at = pattern.metadata.finalized_at
+
+        try:
+            pattern.metadata.status = PatternStatus.FINALIZING
+
+            pattern.mark_finalized()
+
+            pattern.mark_completed()
+
+            return pattern
+
+        except Exception:
+            pattern.metadata.status = previous_status
+            pattern.metadata.complete = previous_complete
+            pattern.metadata.finalized_at = previous_finalized_at
+
+            return pattern
+
     def _is_duplicate_observation(
         self,
         pattern: CandidatePattern,

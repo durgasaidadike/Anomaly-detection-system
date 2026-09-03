@@ -376,3 +376,127 @@ def test_freeze_does_not_remove_active_pattern():
 
     assert frozen is created
     assert current is created
+
+
+def test_finalize_pattern_completes_valid_pattern():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+        user_id="user-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.finalizePattern("session-001")
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
+    assert pattern.metadata.finalized_at is not None
+
+
+def test_finalize_empty_pattern_is_discarded():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    pattern = manager.finalizePattern("session-001")
+
+    assert pattern is None
+
+    current = manager.getCurrentPattern("session-001")
+
+    assert current is not None
+    assert current.is_empty()
+    assert current.metadata.complete is False
+
+
+def test_finalize_interrupted_pattern_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    manager.freezePattern("session-001")
+
+    pattern = manager.finalizePattern("session-001")
+
+    assert pattern is None
+
+    current = manager.getCurrentPattern("session-001")
+
+    assert current is not None
+    assert current.observation_count() == 1
+    assert current.metadata.interrupted is True
+    assert current.metadata.complete is False
+
+
+def test_finalize_unknown_session_returns_none():
+    manager = CandidatePatternManager()
+
+    pattern = manager.finalizePattern(
+        "unknown-session",
+    )
+
+    assert pattern is None
+
+
+def test_finalize_preserves_latest_valid_observations():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        first,
+    )
+
+    manager.updatePattern(
+        "session-001",
+        second,
+    )
+
+    pattern = manager.finalizePattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations[0] == first
+    assert pattern.timeline.observations[1] == second
+    assert pattern.metadata.status == PatternStatus.COMPLETED
