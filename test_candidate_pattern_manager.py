@@ -1567,3 +1567,117 @@ def test_session_identity_remains_stable_across_updates():
     assert pattern.session_characteristics[
         "observation_count"
     ] == 3
+
+
+def test_get_pattern_snapshot_returns_current_pattern():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    snapshot = manager.getPatternSnapshot("session-1")
+
+    assert snapshot is not None
+    assert snapshot.session_id == "session-1"
+    assert snapshot.observation_count() == 1
+
+
+def test_pattern_snapshot_is_independent_from_active_pattern():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    snapshot = manager.getPatternSnapshot("session-1")
+
+    snapshot.timeline.observations.append(
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        }
+    )
+
+    active_pattern = manager.getCurrentPattern("session-1")
+
+    assert active_pattern.observation_count() == 1
+    assert snapshot.observation_count() == 2
+
+
+def test_pattern_snapshot_nested_characteristics_are_independent():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "directory": "/workspace",
+        },
+    )
+
+    snapshot = manager.getPatternSnapshot("session-1")
+
+    snapshot.contextual_characteristics[
+        "directory"
+    ] = "/modified"
+
+    active_pattern = manager.getCurrentPattern("session-1")
+
+    assert active_pattern.contextual_characteristics[
+        "directory"
+    ] == "/workspace"
+
+
+def test_get_pattern_snapshot_returns_none_for_missing_session():
+    manager = CandidatePatternManager()
+
+    snapshot = manager.getPatternSnapshot("missing-session")
+
+    assert snapshot is None
+
+
+def test_pattern_snapshot_preserves_relationships():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    relationship = {
+        "source": "CREATE",
+        "target": "MODIFY",
+        "relationship": "follows",
+    }
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        relationships=[relationship],
+    )
+
+    snapshot = manager.getPatternSnapshot("session-1")
+
+    assert snapshot.relationship_characteristics == [
+        relationship
+    ]

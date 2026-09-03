@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -61,6 +63,24 @@ class CandidatePatternManager:
         """
 
         return self._active_patterns.get(session_id)
+
+    def getPatternSnapshot(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Return a detached snapshot of the current Candidate Pattern.
+
+        The snapshot allows downstream consumers to inspect the
+        current behavioral state without modifying the active pattern.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        return copy.deepcopy(pattern)
 
     def updatePattern(
         self,
