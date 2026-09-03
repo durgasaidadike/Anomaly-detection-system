@@ -606,3 +606,178 @@ def test_reset_does_not_clear_pattern_data():
     assert pattern is not None
     assert pattern.observation_count() == 1
     assert pattern.timeline.observations[0] == observation
+
+
+def test_completed_pattern_cannot_be_updated():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        first,
+    )
+
+    finalized = manager.finalizePattern(
+        "session-001",
+    )
+
+    assert finalized is not None
+    assert finalized.metadata.status == PatternStatus.COMPLETED
+    assert finalized.observation_count() == 1
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern(
+        "session-001",
+        second,
+    )
+
+    assert result is finalized
+    assert result.observation_count() == 1
+    assert second not in result.timeline.observations
+
+
+def test_interrupted_pattern_cannot_be_updated():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        first,
+    )
+
+    frozen = manager.freezePattern(
+        "session-001",
+    )
+
+    assert frozen is not None
+    assert frozen.metadata.interrupted is True
+
+    second = {
+        "operation_type": "DELETE",
+        "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern(
+        "session-001",
+        second,
+    )
+
+    assert result is frozen
+    assert result.observation_count() == 1
+    assert second not in result.timeline.observations
+
+
+def test_initializing_pattern_can_be_updated():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-001",
+    )
+
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert result is pattern
+    assert result.observation_count() == 1
+    assert result.metadata.status == PatternStatus.LEARNING
+
+
+def test_learning_pattern_can_continue_updates():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        first,
+    )
+
+    result = manager.updatePattern(
+        "session-001",
+        second,
+    )
+
+    assert result is not None
+    assert result.metadata.status == PatternStatus.LEARNING
+    assert result.observation_count() == 2
+
+
+def test_rejected_lifecycle_update_preserves_latest_valid_state():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.finalizePattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    invalid_observation = {
+        "operation_type": "DELETE",
+        "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern(
+        "session-001",
+        invalid_observation,
+    )
+
+    assert result is pattern
+    assert result.metadata.status == PatternStatus.COMPLETED
+    assert result.metadata.complete is True
+    assert result.observation_count() == 1
+    assert result.timeline.observations[0] == observation

@@ -80,6 +80,12 @@ class CandidatePatternManager:
         if pattern is None:
             return None
 
+        if pattern.metadata.interrupted:
+            return pattern
+
+        if pattern.metadata.status == PatternStatus.COMPLETED:
+            return pattern
+
         if not isinstance(observation, dict):
             return pattern
 
