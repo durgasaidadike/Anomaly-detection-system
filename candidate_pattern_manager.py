@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from candidate_pattern_models import (
     CandidatePattern,
@@ -67,6 +67,7 @@ class CandidatePatternManager:
         session_id: str,
         observation: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
+        relationships: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[CandidatePattern]:
         """
         Incrementally update the active Candidate Pattern.
@@ -121,6 +122,11 @@ class CandidatePatternManager:
                     pattern,
                     context,
                 )
+
+            self._update_relationship_characteristics(
+                pattern,
+                relationships,
+            )
 
             if previous_status == PatternStatus.INITIALIZING:
                 pattern.metadata.status = PatternStatus.LEARNING
@@ -363,3 +369,25 @@ class CandidatePatternManager:
             return
 
         pattern.contextual_characteristics.update(context)
+
+    def _update_relationship_characteristics(
+        self,
+        pattern: CandidatePattern,
+        relationships: Optional[List[Dict[str, Any]]],
+    ) -> None:
+        """
+        Incrementally incorporate interpreted behavioral relationships
+        into the Candidate Pattern.
+        """
+
+        if not relationships:
+            return
+
+        for relationship in relationships:
+            if not isinstance(relationship, dict):
+                continue
+
+            if relationship not in pattern.relationship_characteristics:
+                pattern.relationship_characteristics.append(
+                    relationship.copy()
+                )

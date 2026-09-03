@@ -1323,3 +1323,117 @@ def test_duplicate_observation_does_not_change_contextual_characteristics():
     pattern = manager.getCurrentPattern("session-1")
 
     assert pattern.contextual_characteristics["directory"] == "/workspace"
+
+
+def test_update_builds_relationship_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    relationship = {
+        "source": "CREATE",
+        "target": "MODIFY",
+        "relationship": "follows",
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        relationships=[relationship],
+    )
+
+    assert pattern.relationship_characteristics == [
+        relationship
+    ]
+
+
+def test_multiple_relationships_are_preserved():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    relationships = [
+        {
+            "source": "CREATE",
+            "target": "MODIFY",
+            "relationship": "follows",
+        },
+        {
+            "source": "MODIFY",
+            "target": "DELETE",
+            "relationship": "precedes",
+        },
+    ]
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+        relationships=relationships,
+    )
+
+    assert pattern.relationship_characteristics == relationships
+
+
+def test_duplicate_relationships_are_not_repeated():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    relationship = {
+        "source": "CREATE",
+        "target": "MODIFY",
+        "relationship": "follows",
+    }
+
+    observation_1 = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    observation_2 = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-1",
+        observation_1,
+        relationships=[relationship],
+    )
+
+    pattern = manager.updatePattern(
+        "session-1",
+        observation_2,
+        relationships=[relationship],
+    )
+
+    assert pattern.relationship_characteristics == [
+        relationship
+    ]
+
+
+def test_invalid_relationship_entries_are_ignored():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        relationships=[
+            None,
+            "invalid",
+            123,
+        ],
+    )
+
+    assert pattern.relationship_characteristics == []
