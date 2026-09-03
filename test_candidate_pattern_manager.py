@@ -781,3 +781,145 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
     assert result.metadata.complete is True
     assert result.observation_count() == 1
     assert result.timeline.observations[0] == observation
+
+
+def test_update_builds_operational_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+
+    assert pattern.operational_characteristics[
+        "total_operations"
+    ] == 1
+
+    assert pattern.operational_characteristics[
+        "operation_counts"
+    ]["CREATE"] == 1
+
+    assert pattern.operational_characteristics[
+        "unique_operation_types"
+    ] == 1
+
+
+def test_operational_characteristics_accumulate_operation_types():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime.now(),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime.now(),
+        },
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime.now(),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime.now(),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-001",
+            observation,
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.operational_characteristics
+
+    assert characteristics["total_operations"] == 4
+
+    assert characteristics["operation_counts"]["CREATE"] == 2
+    assert characteristics["operation_counts"]["MODIFY"] == 1
+    assert characteristics["operation_counts"]["DELETE"] == 1
+
+    assert characteristics["unique_operation_types"] == 3
+
+
+def test_operational_characteristics_handle_missing_operation_type():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "timestamp": datetime.now(),
+        "signal": "HIGH_ACTIVITY",
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.operational_characteristics
+
+    assert characteristics["total_operations"] == 1
+    assert characteristics["operation_counts"] == {}
+    assert characteristics["unique_operation_types"] == 0
+
+
+def test_duplicate_observation_does_not_change_operational_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.operational_characteristics
+
+    assert characteristics["total_operations"] == 1
+    assert characteristics["operation_counts"]["CREATE"] == 1
+    assert characteristics["unique_operation_types"] == 1

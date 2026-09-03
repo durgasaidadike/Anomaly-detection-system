@@ -99,6 +99,11 @@ class CandidatePatternManager:
 
             pattern.add_observation(observation)
 
+            self._update_operational_characteristics(
+                pattern,
+                observation,
+            )
+
             if context:
                 pattern.context.update(context)
 
@@ -221,3 +226,38 @@ class CandidatePatternManager:
 
         if "timestamp" not in observation:
             raise ValueError("Observation must contain a timestamp")
+
+    def _update_operational_characteristics(
+        self,
+        pattern: CandidatePattern,
+        observation: Dict[str, Any],
+    ) -> None:
+        """
+        Incrementally update operational characteristics from an
+        interpreted behavioral observation.
+        """
+
+        operation_type = observation.get("operation_type")
+
+        characteristics = pattern.operational_characteristics
+
+        total_operations = characteristics.get(
+            "total_operations",
+            0,
+        )
+
+        characteristics["total_operations"] = total_operations + 1
+
+        operation_counts = characteristics.setdefault(
+            "operation_counts",
+            {},
+        )
+
+        if operation_type is not None:
+            operation_counts[operation_type] = (
+                operation_counts.get(operation_type, 0) + 1
+            )
+
+        characteristics["unique_operation_types"] = len(
+            operation_counts
+        )
