@@ -67,7 +67,7 @@ def test_incomplete_pattern_is_rejected():
 
     adapter = FinalPatternRepositoryAdapter()
 
-    assert adapter.store(pattern) is False
+    assert adapter._validate_final_pattern(pattern) is False
 
 
 def test_empty_pattern_is_rejected():
@@ -79,7 +79,7 @@ def test_empty_pattern_is_rejected():
 
     adapter = FinalPatternRepositoryAdapter()
 
-    assert adapter.store(pattern) is False
+    assert adapter._validate_final_pattern(pattern) is False
 
 
 def test_observation_is_translated_to_repository_record():
@@ -171,3 +171,103 @@ def test_unknown_operation_is_rejected():
     )
 
     assert result is None
+
+
+def test_final_pattern_with_missing_operation_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    pattern.timeline.observations[0].pop("operation_type")
+
+    adapter = FinalPatternRepositoryAdapter()
+
+    assert adapter._validate_final_pattern(pattern) is False
+
+
+def test_final_pattern_with_unknown_operation_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    pattern.timeline.observations[0]["operation_type"] = (
+        "UNKNOWN_OPERATION"
+    )
+
+    adapter = FinalPatternRepositoryAdapter()
+
+    assert adapter._validate_final_pattern(pattern) is False
+
+
+def test_final_pattern_with_missing_timestamp_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    pattern.timeline.observations[0].pop("timestamp")
+
+    adapter = FinalPatternRepositoryAdapter()
+
+    assert adapter._validate_final_pattern(pattern) is False
+
+
+def test_invalid_final_pattern_is_not_stored(monkeypatch):
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    pattern.timeline.observations[0]["operation_type"] = (
+        "INVALID"
+    )
+
+    stored_records = []
+
+    monkeypatch.setattr(
+        "final_pattern_repository_adapter.store_pattern",
+        lambda record: stored_records.append(record),
+    )
+
+    adapter = FinalPatternRepositoryAdapter()
+
+    assert adapter.store(pattern) is False
+    assert stored_records == []

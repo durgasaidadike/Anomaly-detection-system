@@ -41,7 +41,35 @@ class FinalPatternRepositoryAdapter:
         """
         Store the observations from a completed Candidate Pattern.
 
-        Only completed patterns are accepted.
+        Only structurally valid completed patterns are accepted.
+        """
+
+        if not self._validate_final_pattern(pattern):
+            return False
+
+        try:
+            for observation in pattern.timeline.observations:
+                repository_record = self._to_repository_record(
+                    observation
+                )
+
+                if repository_record is None:
+                    return False
+
+                store_pattern(repository_record)
+
+            return True
+
+        except Exception:
+            return False
+
+    def _validate_final_pattern(
+        self,
+        pattern: CandidatePattern,
+    ) -> bool:
+        """
+        Validate the structural requirements of a Final Pattern
+        before it crosses into the historical repository.
         """
 
         if pattern is None:
@@ -53,21 +81,31 @@ class FinalPatternRepositoryAdapter:
         if pattern.is_empty():
             return False
 
-        try:
-            for observation in pattern.timeline.observations:
-                repository_record = self._to_repository_record(
-                    observation
-                )
-
-                if repository_record is None:
-                    continue
-
-                store_pattern(repository_record)
-
-            return True
-
-        except Exception:
+        if not pattern.session_id:
             return False
+
+        if not isinstance(pattern.timeline.observations, list):
+            return False
+
+        for observation in pattern.timeline.observations:
+            if not isinstance(observation, dict):
+                return False
+
+            operation_type = observation.get("operation_type")
+            timestamp = observation.get("timestamp")
+
+            if operation_type is None:
+                return False
+
+            if timestamp is None:
+                return False
+
+            if self.OPERATION_TYPE_MAP.get(
+                str(operation_type).upper()
+            ) is None:
+                return False
+
+        return True
 
     def _to_repository_record(
         self,
