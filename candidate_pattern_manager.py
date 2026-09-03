@@ -104,6 +104,11 @@ class CandidatePatternManager:
                 observation,
             )
 
+            self._update_temporal_characteristics(
+                pattern,
+                observation,
+            )
+
             if context:
                 pattern.context.update(context)
 
@@ -261,3 +266,51 @@ class CandidatePatternManager:
         characteristics["unique_operation_types"] = len(
             operation_counts
         )
+
+    def _update_temporal_characteristics(
+        self,
+        pattern: CandidatePattern,
+        observation: Dict[str, Any],
+    ) -> None:
+        """
+        Incrementally update temporal characteristics from an
+        interpreted behavioral observation.
+        """
+
+        timestamp = observation.get("timestamp")
+
+        if timestamp is None:
+            return
+
+        characteristics = pattern.temporal_characteristics
+
+        first_timestamp = characteristics.get(
+            "first_observation_time"
+        )
+
+        last_timestamp = characteristics.get(
+            "last_observation_time"
+        )
+
+        if first_timestamp is None:
+            characteristics["first_observation_time"] = timestamp
+        elif timestamp < first_timestamp:
+            characteristics["first_observation_time"] = timestamp
+
+        if last_timestamp is None:
+            characteristics["last_observation_time"] = timestamp
+        elif timestamp > last_timestamp:
+            characteristics["last_observation_time"] = timestamp
+
+        first_timestamp = characteristics.get(
+            "first_observation_time"
+        )
+
+        last_timestamp = characteristics.get(
+            "last_observation_time"
+        )
+
+        if first_timestamp is not None and last_timestamp is not None:
+            characteristics["duration_seconds"] = (
+                last_timestamp - first_timestamp
+            ).total_seconds()

@@ -923,3 +923,169 @@ def test_duplicate_observation_does_not_change_operational_characteristics():
     assert characteristics["total_operations"] == 1
     assert characteristics["operation_counts"]["CREATE"] == 1
     assert characteristics["unique_operation_types"] == 1
+
+
+def test_update_builds_temporal_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        0,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": timestamp,
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.temporal_characteristics
+
+    assert characteristics["first_observation_time"] == timestamp
+    assert characteristics["last_observation_time"] == timestamp
+    assert characteristics["duration_seconds"] == 0.0
+
+
+def test_temporal_characteristics_calculate_duration():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first_timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        0,
+    )
+
+    second_timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        12,
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": first_timestamp,
+        },
+    )
+
+    pattern = manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": second_timestamp,
+        },
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.temporal_characteristics
+
+    assert characteristics["first_observation_time"] == first_timestamp
+    assert characteristics["last_observation_time"] == second_timestamp
+    assert characteristics["duration_seconds"] == 12.0
+
+
+def test_temporal_characteristics_handle_out_of_order_timestamps():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first_timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        10,
+    )
+
+    earlier_timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        3,
+    )
+
+    later_timestamp = datetime(
+        2026,
+        9,
+        1,
+        10,
+        0,
+        20,
+    )
+
+    for timestamp in (
+        first_timestamp,
+        earlier_timestamp,
+        later_timestamp,
+    ):
+        manager.updatePattern(
+            "session-001",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.temporal_characteristics
+
+    assert characteristics["first_observation_time"] == earlier_timestamp
+    assert characteristics["last_observation_time"] == later_timestamp
+    assert characteristics["duration_seconds"] == 17.0
+
+
+def test_temporal_characteristics_require_valid_timestamp():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 0
+    assert pattern.temporal_characteristics == {}
