@@ -1089,3 +1089,131 @@ def test_temporal_characteristics_require_valid_timestamp():
     assert pattern is not None
     assert pattern.observation_count() == 0
     assert pattern.temporal_characteristics == {}
+
+
+def test_update_builds_sequential_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamp = datetime.now()
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": timestamp,
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+
+    assert pattern.sequential_characteristics == [
+        {
+            "operation_type": "CREATE",
+            "timestamp": timestamp,
+        }
+    ]
+
+
+def test_sequential_characteristics_preserve_operation_order():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime.now(),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime.now(),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime.now(),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-001",
+            observation,
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    assert [
+        entry["operation_type"]
+        for entry in pattern.sequential_characteristics
+    ] == [
+        "CREATE",
+        "MODIFY",
+        "DELETE",
+    ]
+
+
+def test_duplicate_observation_does_not_change_sequence():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    assert len(
+        pattern.sequential_characteristics
+    ) == 1
+
+
+def test_sequential_characteristics_ignore_missing_operation_type():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "timestamp": datetime.now(),
+        "signal": "HIGH_ACTIVITY",
+    }
+
+    pattern = manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+    assert pattern.sequential_characteristics == []

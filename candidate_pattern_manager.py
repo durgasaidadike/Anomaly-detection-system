@@ -109,6 +109,11 @@ class CandidatePatternManager:
                 observation,
             )
 
+            self._update_sequential_characteristics(
+                pattern,
+                observation,
+            )
+
             if context:
                 pattern.context.update(context)
 
@@ -314,3 +319,27 @@ class CandidatePatternManager:
             characteristics["duration_seconds"] = (
                 last_timestamp - first_timestamp
             ).total_seconds()
+
+    def _update_sequential_characteristics(
+        self,
+        pattern: CandidatePattern,
+        observation: Dict[str, Any],
+    ) -> None:
+        """
+        Incrementally update sequential characteristics from an
+        interpreted behavioral observation.
+        """
+
+        operation_type = observation.get("operation_type")
+
+        if operation_type is None:
+            return
+
+        sequence_entry = {
+            "operation_type": operation_type,
+            "timestamp": observation.get("timestamp"),
+        }
+
+        pattern.sequential_characteristics.append(
+            sequence_entry
+        )
