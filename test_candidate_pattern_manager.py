@@ -278,3 +278,101 @@ def test_sessions_remain_isolated_during_updates():
         second_pattern.timeline.observations[0]["operation_type"]
         == "DELETE"
     )
+
+
+def test_freeze_pattern_marks_pattern_interrupted():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+        user_id="user-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.freezePattern("session-001")
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
+
+
+def test_freeze_empty_pattern_preserves_empty_state():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    pattern = manager.freezePattern("session-001")
+
+    assert pattern is not None
+    assert pattern.is_empty()
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
+
+
+def test_freeze_unknown_session_returns_none():
+    manager = CandidatePatternManager()
+
+    pattern = manager.freezePattern(
+        "unknown-session",
+    )
+
+    assert pattern is None
+
+
+def test_freeze_preserves_latest_valid_observations():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern("session-001", first)
+    manager.updatePattern("session-001", second)
+
+    pattern = manager.freezePattern("session-001")
+
+    assert pattern is not None
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations[0] == first
+    assert pattern.timeline.observations[1] == second
+
+
+def test_freeze_does_not_remove_active_pattern():
+    manager = CandidatePatternManager()
+
+    created = manager.createPattern(
+        session_id="session-001",
+    )
+
+    frozen = manager.freezePattern(
+        "session-001",
+    )
+
+    current = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert frozen is created
+    assert current is created

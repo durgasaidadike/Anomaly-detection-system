@@ -104,6 +104,30 @@ class CandidatePatternManager:
         except Exception:
             return pattern
 
+    def freezePattern(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Freeze the latest valid Candidate Pattern for a session.
+
+        Freezing preserves the current behavioral state without
+        finalizing or persisting the pattern.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        try:
+            pattern.mark_interrupted()
+
+            return pattern
+
+        except Exception:
+            return pattern
+
     def _is_duplicate_observation(
         self,
         pattern: CandidatePattern,
