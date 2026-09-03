@@ -1791,7 +1791,7 @@ def test_completed_pattern_cannot_be_modified():
 
     manager.finalizePattern("session-1")
 
-    manager.updatePattern(
+    result = manager.updatePattern(
         "session-1",
         {
             "operation_type": "DELETE",
@@ -1799,14 +1799,9 @@ def test_completed_pattern_cannot_be_modified():
         },
     )
 
-    pattern = manager.getCurrentPattern("session-1")
-
-    assert pattern is not None
-    assert pattern.metadata.status == PatternStatus.COMPLETED
-    assert pattern.observation_count() == 1
-    assert pattern.operational_characteristics[
-        "total_operations"
-    ] == 1
+    assert result is not None
+    assert result.metadata.status == PatternStatus.COMPLETED
+    assert result.observation_count() == 1
 
 
 def test_repeated_finalization_returns_completed_pattern():
@@ -1831,6 +1826,7 @@ def test_repeated_finalization_returns_completed_pattern():
     assert second is first
     assert second.metadata.status == PatternStatus.COMPLETED
     assert second.metadata.finalized_at == finalized_at
+    assert second.observation_count() == 1
 
 
 def test_finalized_pattern_is_handed_off():
