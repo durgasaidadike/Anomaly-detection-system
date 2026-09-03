@@ -19,12 +19,16 @@ class CandidatePatternManager:
     to temporary active-session Candidate Pattern state.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        final_pattern_handler: Optional[Any] = None,
+    ) -> None:
         """
         Initialize the Candidate Pattern Manager.
         """
 
         self._active_patterns: Dict[str, CandidatePattern] = {}
+        self._final_pattern_handler = final_pattern_handler
 
     def createPattern(
         self,
@@ -219,6 +223,9 @@ class CandidatePatternManager:
 
             pattern.mark_completed()
 
+            if not self._handoff_final_pattern(pattern):
+                return pattern
+
             return pattern
 
         except Exception:
@@ -240,6 +247,31 @@ class CandidatePatternManager:
         """
 
         return self._active_patterns.pop(session_id, None)
+
+    def _handoff_final_pattern(
+        self,
+        pattern: CandidatePattern,
+    ) -> bool:
+        """
+        Hand off a successfully finalized Candidate Pattern to the
+        downstream final-pattern consumer.
+
+        Persistence remains outside the Candidate Pattern Manager.
+        """
+
+        if self._final_pattern_handler is None:
+            return True
+
+        try:
+            result = self._final_pattern_handler(pattern)
+
+            if result is False:
+                return False
+
+            return True
+
+        except Exception:
+            return False
 
     def _is_duplicate_observation(
         self,

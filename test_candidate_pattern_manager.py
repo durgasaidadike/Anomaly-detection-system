@@ -1831,3 +1831,165 @@ def test_repeated_finalization_returns_completed_pattern():
     assert second is first
     assert second.metadata.status == PatternStatus.COMPLETED
     assert second.metadata.finalized_at == finalized_at
+
+
+def test_finalized_pattern_is_handed_off():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    assert pattern is not None
+    assert len(received) == 1
+    assert received[0] is pattern
+
+
+def test_empty_pattern_is_not_handed_off():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern("session-1")
+
+    result = manager.finalizePattern("session-1")
+
+    assert result is None
+    assert received == []
+
+
+def test_interrupted_pattern_is_not_handed_off():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.freezePattern("session-1")
+
+    result = manager.finalizePattern("session-1")
+
+    assert result is None
+    assert received == []
+
+
+def test_missing_session_is_not_handed_off():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    result = manager.finalizePattern("missing-session")
+
+    assert result is None
+    assert received == []
+
+
+def test_failed_handoff_does_not_corrupt_completed_pattern():
+    def handler(pattern):
+        raise RuntimeError("repository unavailable")
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
+    assert pattern.observation_count() == 1
+
+
+def test_handler_returning_false_is_failed_handoff():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+        return False
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert len(received) == 1
+
+
+def test_finalization_without_handler_still_succeeds():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.COMPLETED
