@@ -1681,3 +1681,153 @@ def test_pattern_snapshot_preserves_relationships():
     assert snapshot.relationship_characteristics == [
         relationship
     ]
+
+
+def test_empty_pattern_cannot_be_finalized():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    result = manager.finalizePattern("session-1")
+
+    assert result is None
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.complete is False
+
+
+def test_interrupted_pattern_cannot_be_finalized():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.freezePattern("session-1")
+
+    result = manager.finalizePattern("session-1")
+
+    assert result is None
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
+
+
+def test_finalization_preserves_learned_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    relationship = {
+        "source": "CREATE",
+        "target": "MODIFY",
+        "relationship": "follows",
+    }
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "directory": "/workspace",
+        },
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        relationships=[relationship],
+    )
+
+    pattern = manager.finalizePattern("session-1")
+
+    assert pattern is not None
+
+    assert pattern.observation_count() == 2
+
+    assert pattern.operational_characteristics[
+        "total_operations"
+    ] == 2
+
+    assert len(pattern.sequential_characteristics) == 2
+
+    assert pattern.contextual_characteristics[
+        "directory"
+    ] == "/workspace"
+
+    assert pattern.relationship_characteristics == [
+        relationship
+    ]
+
+
+def test_completed_pattern_cannot_be_modified():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.finalizePattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.observation_count() == 1
+    assert pattern.operational_characteristics[
+        "total_operations"
+    ] == 1
+
+
+def test_repeated_finalization_returns_completed_pattern():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    first = manager.finalizePattern("session-1")
+
+    finalized_at = first.metadata.finalized_at
+
+    second = manager.finalizePattern("session-1")
+
+    assert second is first
+    assert second.metadata.status == PatternStatus.COMPLETED
+    assert second.metadata.finalized_at == finalized_at

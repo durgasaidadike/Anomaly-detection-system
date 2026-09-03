@@ -187,15 +187,11 @@ class CandidatePatternManager:
         session_id: str,
     ) -> Optional[CandidatePattern]:
         """
-        Finalize the active Candidate Pattern for a session.
+        Finalize the active Candidate Pattern.
 
-        Finalization converts a valid active Candidate Pattern into
-        a completed behavioral representation.
-
-        Empty or interrupted patterns are not finalized.
-
-        Persistence and historical storage are intentionally outside
-        this manager.
+        Finalization converts the evolving Candidate Pattern into a
+        completed immutable state. Persistence and repository handoff
+        are intentionally outside this operation.
         """
 
         pattern = self.getCurrentPattern(session_id)
@@ -208,6 +204,9 @@ class CandidatePatternManager:
 
         if pattern.metadata.interrupted:
             return None
+
+        if pattern.metadata.status == PatternStatus.COMPLETED:
+            return pattern
 
         previous_status = pattern.metadata.status
         previous_complete = pattern.metadata.complete
