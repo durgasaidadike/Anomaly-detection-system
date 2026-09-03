@@ -175,6 +175,19 @@ class CandidatePatternManager:
 
             return pattern
 
+    def resetPattern(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Remove and return the active Candidate Pattern for a session.
+
+        Reset releases temporary active-session state. It does not
+        modify historical patterns or perform persistence.
+        """
+
+        return self._active_patterns.pop(session_id, None)
+
     def _is_duplicate_observation(
         self,
         pattern: CandidatePattern,

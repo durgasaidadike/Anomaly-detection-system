@@ -500,3 +500,109 @@ def test_finalize_preserves_latest_valid_observations():
     assert pattern.timeline.observations[0] == first
     assert pattern.timeline.observations[1] == second
     assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_reset_pattern_removes_active_pattern():
+    manager = CandidatePatternManager()
+
+    created = manager.createPattern(
+        session_id="session-001",
+    )
+
+    reset = manager.resetPattern(
+        "session-001",
+    )
+
+    assert reset is created
+    assert manager.getCurrentPattern("session-001") is None
+
+
+def test_reset_unknown_session_returns_none():
+    manager = CandidatePatternManager()
+
+    result = manager.resetPattern(
+        "unknown-session",
+    )
+
+    assert result is None
+
+
+def test_reset_preserves_returned_pattern_object():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    finalized = manager.finalizePattern(
+        "session-001",
+    )
+
+    assert finalized is not None
+
+    reset = manager.resetPattern(
+        "session-001",
+    )
+
+    assert reset is finalized
+    assert reset.metadata.status == PatternStatus.COMPLETED
+    assert reset.metadata.complete is True
+    assert reset.observation_count() == 1
+
+    assert manager.getCurrentPattern("session-001") is None
+
+
+def test_reset_allows_new_candidate_pattern_for_same_session():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.resetPattern(
+        "session-001",
+    )
+
+    second = manager.createPattern(
+        session_id="session-001",
+    )
+
+    assert second is not first
+    assert second.session_id == "session-001"
+    assert second.is_empty()
+
+
+def test_reset_does_not_clear_pattern_data():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.resetPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations[0] == observation
