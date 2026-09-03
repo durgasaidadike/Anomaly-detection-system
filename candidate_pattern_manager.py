@@ -128,6 +128,8 @@ class CandidatePatternManager:
                 relationships,
             )
 
+            self._update_session_characteristics(pattern)
+
             if previous_status == PatternStatus.INITIALIZING:
                 pattern.metadata.status = PatternStatus.LEARNING
 
@@ -391,3 +393,23 @@ class CandidatePatternManager:
                 pattern.relationship_characteristics.append(
                     relationship.copy()
                 )
+
+    def _update_session_characteristics(
+        self,
+        pattern: CandidatePattern,
+    ) -> None:
+        """
+        Incrementally update session-level characteristics of the
+        Candidate Pattern.
+        """
+
+        characteristics = pattern.session_characteristics
+
+        characteristics["session_id"] = pattern.session_id
+        characteristics["user_id"] = pattern.user_id
+        characteristics["session_start_time"] = (
+            pattern.session_start_time
+        )
+        characteristics["observation_count"] = (
+            pattern.observation_count()
+        )

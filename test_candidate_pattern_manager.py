@@ -1437,3 +1437,133 @@ def test_invalid_relationship_entries_are_ignored():
     )
 
     assert pattern.relationship_characteristics == []
+
+
+def test_update_builds_session_characteristics():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    manager.createPattern(
+        "session-1",
+        user_id="user-1",
+        session_start_time=start_time,
+    )
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": start_time,
+        },
+    )
+
+    assert pattern.session_characteristics["session_id"] == (
+        "session-1"
+    )
+
+    assert pattern.session_characteristics["user_id"] == (
+        "user-1"
+    )
+
+    assert pattern.session_characteristics[
+        "session_start_time"
+    ] == start_time
+
+
+def test_session_characteristics_update_observation_count():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    first_observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second_observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-1",
+        first_observation,
+    )
+
+    pattern = manager.updatePattern(
+        "session-1",
+        second_observation,
+    )
+
+    assert pattern.session_characteristics[
+        "observation_count"
+    ] == 2
+
+
+def test_duplicate_observation_does_not_change_session_count():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern.session_characteristics[
+        "observation_count"
+    ] == 1
+
+
+def test_session_identity_remains_stable_across_updates():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        "session-1",
+        user_id="user-1",
+    )
+
+    for minute, operation in enumerate(
+        ["CREATE", "MODIFY", "DELETE"]
+    ):
+        manager.updatePattern(
+            "session-1",
+            {
+                "operation_type": operation,
+                "timestamp": datetime(
+                    2026,
+                    1,
+                    1,
+                    10,
+                    minute,
+                    0,
+                ),
+            },
+        )
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern.session_characteristics["session_id"] == (
+        "session-1"
+    )
+
+    assert pattern.session_characteristics["user_id"] == (
+        "user-1"
+    )
+
+    assert pattern.session_characteristics[
+        "observation_count"
+    ] == 3
