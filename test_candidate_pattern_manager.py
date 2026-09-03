@@ -1217,3 +1217,109 @@ def test_sequential_characteristics_ignore_missing_operation_type():
     assert pattern is not None
     assert pattern.observation_count() == 1
     assert pattern.sequential_characteristics == []
+
+
+def test_update_builds_contextual_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    context = {
+        "user_id": "user-1",
+        "directory": "/workspace",
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context=context,
+    )
+
+    assert pattern.contextual_characteristics == context
+
+
+def test_contextual_characteristics_evolve_incrementally():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "directory": "/workspace",
+            "user_id": "user-1",
+        },
+    )
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        context={
+            "directory": "/workspace/project",
+        },
+    )
+
+    assert pattern.contextual_characteristics["directory"] == (
+        "/workspace/project"
+    )
+
+    assert pattern.contextual_characteristics["user_id"] == "user-1"
+
+
+def test_missing_context_does_not_modify_contextual_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    assert pattern.contextual_characteristics == {}
+
+
+def test_duplicate_observation_does_not_change_contextual_characteristics():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    context = {
+        "directory": "/workspace",
+    }
+
+    manager.updatePattern(
+        "session-1",
+        observation,
+        context=context,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        observation,
+        context={
+            "directory": "/different",
+        },
+    )
+
+    pattern = manager.getCurrentPattern("session-1")
+
+    assert pattern.contextual_characteristics["directory"] == "/workspace"

@@ -117,6 +117,11 @@ class CandidatePatternManager:
             if context:
                 pattern.context.update(context)
 
+                self._update_contextual_characteristics(
+                    pattern,
+                    context,
+                )
+
             if previous_status == PatternStatus.INITIALIZING:
                 pattern.metadata.status = PatternStatus.LEARNING
 
@@ -343,3 +348,18 @@ class CandidatePatternManager:
         pattern.sequential_characteristics.append(
             sequence_entry
         )
+
+    def _update_contextual_characteristics(
+        self,
+        pattern: CandidatePattern,
+        context: Optional[Dict[str, Any]],
+    ) -> None:
+        """
+        Incrementally update contextual characteristics from the
+        latest behavioral context.
+        """
+
+        if not context:
+            return
+
+        pattern.contextual_characteristics.update(context)
