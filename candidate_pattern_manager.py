@@ -93,13 +93,6 @@ class CandidatePatternManager:
         context: Optional[Dict[str, Any]] = None,
         relationships: Optional[List[Dict[str, Any]]] = None,
     ) -> Optional[CandidatePattern]:
-        """
-        Incrementally update the active Candidate Pattern.
-
-        The observation must represent interpreted behavioral
-        information rather than a raw filesystem event.
-        """
-
         pattern = self.getCurrentPattern(session_id)
 
         if pattern is None:
@@ -114,13 +107,16 @@ class CandidatePatternManager:
         if not isinstance(observation, dict):
             return pattern
 
+        previous_state = None
+
         try:
             if self._is_duplicate_observation(pattern, observation):
                 return pattern
 
             self._validate_observation(observation)
 
-            previous_status = pattern.metadata.status
+            # Capture the complete state before any mutation occurs.
+            previous_state = copy.deepcopy(pattern)
 
             pattern.add_observation(observation)
 
@@ -154,12 +150,18 @@ class CandidatePatternManager:
 
             self._update_session_characteristics(pattern)
 
-            if previous_status == PatternStatus.INITIALIZING:
+            if previous_state.metadata.status == PatternStatus.INITIALIZING:
                 pattern.metadata.status = PatternStatus.LEARNING
 
             return pattern
 
         except Exception:
+            if previous_state is not None:
+                self._restore_pattern_state(
+                    pattern,
+                    previous_state,
+                )
+
             return pattern
 
     def freezePattern(
@@ -300,6 +302,23 @@ class CandidatePatternManager:
 
         if "timestamp" not in observation:
             raise ValueError("Observation must contain a timestamp")
+
+    def _restore_pattern_state(
+        self,
+        pattern: CandidatePattern,
+        snapshot: CandidatePattern,
+    ) -> None:
+        """
+        Restore a Candidate Pattern to its exact state before
+        a failed update.
+
+        The original pattern object is preserved so callers holding
+        a reference to it continue to receive the same object.
+        """
+        pattern.__dict__.clear()
+        pattern.__dict__.update(
+            copy.deepcopy(snapshot.__dict__)
+        )
 
     def _update_operational_characteristics(
         self,

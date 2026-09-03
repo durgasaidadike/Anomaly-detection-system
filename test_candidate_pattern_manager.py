@@ -179,6 +179,152 @@ def test_update_pattern_updates_latest_context():
     assert pattern.context.values["session_intensity"] == "HIGH"
 
 
+def test_update_failure_rolls_back_partial_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("session-1")
+
+    first_observation = {
+        "operation_type": "CREATE",
+        "file_extension": ".txt",
+        "directory": "/docs",
+        "event_hour": 10,
+        "file_size": 100,
+        "timestamp": "2026-01-01T10:00:00",
+    }
+
+    manager.updatePattern(
+        "session-1",
+        first_observation,
+    )
+
+    original_count = pattern.observation_count()
+    original_operations = pattern.operational_characteristics.copy()
+    original_status = pattern.metadata.status
+
+    def failing_update(*args, **kwargs):
+        raise RuntimeError("simulated update failure")
+
+    manager._update_temporal_characteristics = failing_update
+
+    second_observation = {
+        "operation_type": "MODIFY",
+        "file_extension": ".txt",
+        "directory": "/docs",
+        "event_hour": 11,
+        "file_size": 200,
+        "timestamp": "2026-01-01T11:00:00",
+    }
+
+    result = manager.updatePattern(
+        "session-1",
+        second_observation,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == original_count
+    assert pattern.operational_characteristics == original_operations
+    assert pattern.metadata.status == original_status
+
+
+def test_update_failure_rolls_back_context_and_relationships():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("session-1")
+
+    first_observation = {
+        "operation_type": "CREATE",
+        "file_extension": ".txt",
+        "directory": "/docs",
+        "event_hour": 10,
+        "file_size": 100,
+        "timestamp": "2026-01-01T10:00:00",
+    }
+
+    manager.updatePattern(
+        "session-1",
+        first_observation,
+    )
+
+    original_count = pattern.observation_count()
+    original_context = pattern.context.values.copy()
+    original_relationships = (
+        pattern.relationship_characteristics.copy()
+    )
+
+    def failing_relationship_update(*args, **kwargs):
+        raise RuntimeError("simulated relationship failure")
+
+    manager._update_relationship_characteristics = (
+        failing_relationship_update
+    )
+
+    second_observation = {
+        "operation_type": "MODIFY",
+        "file_extension": ".log",
+        "directory": "/logs",
+        "event_hour": 11,
+        "file_size": 300,
+        "timestamp": "2026-01-01T11:00:00",
+    }
+
+    result = manager.updatePattern(
+        "session-1",
+        second_observation,
+        context={
+            "source": "filesystem",
+            "environment": "production",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "important.txt",
+            }
+        ],
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == original_count
+    assert pattern.context.values == original_context
+    assert (
+        pattern.relationship_characteristics
+        == original_relationships
+    )
+
+
+def test_first_update_failure_preserves_initial_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("session-1")
+
+    original_status = pattern.metadata.status
+
+    def failing_update(*args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    manager._update_operational_characteristics = failing_update
+
+    observation = {
+        "operation_type": "CREATE",
+        "file_extension": ".txt",
+        "directory": "/docs",
+        "event_hour": 10,
+        "file_size": 100,
+        "timestamp": "2026-01-01T10:00:00",
+    }
+
+    result = manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.metadata.observation_count == 0
+    assert pattern.metadata.status == original_status
+    assert pattern.operational_characteristics == {}
+
+
 def test_duplicate_observation_is_ignored():
     manager = CandidatePatternManager()
 
