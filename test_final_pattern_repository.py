@@ -467,3 +467,86 @@ def test_search_does_not_modify_historical_pattern():
     assert stored is not None
     assert stored.pattern_id == "pattern-1"
     assert stored.observation_count == 1
+
+
+def test_search_returns_no_match_for_unknown_behavior():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    result = repository.search(pattern)
+
+    assert result.matched is False
+    assert result.representative_pattern is None
+    assert result.behavioral_knowledge is None
+
+
+def test_search_returns_match_for_known_behavior():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    result = repository.search(pattern)
+
+    assert result.matched is True
+    assert result.representative_pattern is not None
+    assert result.representative_pattern.pattern_id == (
+        "pattern-1"
+    )
+    assert result.behavioral_knowledge is not None
+    assert result.behavioral_knowledge.knowledge_id == (
+        "knowledge-pattern-1"
+    )
+
+
+def test_search_returns_representative_for_repeated_behavior():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    repeated = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert repository.store(repeated)
+
+    result = repository.search(repeated)
+
+    assert result.matched is True
+    assert result.representative_pattern is not None
+    assert result.representative_pattern.pattern_id == (
+        "pattern-1"
+    )
+    assert result.behavioral_knowledge is not None
+    assert result.behavioral_knowledge.occurrence_count == 2
+
+
+def test_search_does_not_create_new_knowledge():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    result = repository.search(pattern)
+
+    assert result.matched is True
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+
+
+def test_search_rejects_invalid_pattern():
+    repository = FinalPatternRepository()
+
+    result = repository.search(None)
+
+    assert result.matched is False
+    assert result.representative_pattern is None
+    assert result.behavioral_knowledge is None
