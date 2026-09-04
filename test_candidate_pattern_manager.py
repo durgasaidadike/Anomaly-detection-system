@@ -2135,3 +2135,43 @@ def test_finalization_without_handler_still_succeeds():
 
     assert pattern is not None
     assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_manager_can_handoff_to_final_pattern_repository_adapter():
+    from final_pattern_repository import FinalPatternRepository
+    from final_pattern_repository_adapter import (
+        FinalPatternRepositoryAdapter,
+    )
+
+    repository = FinalPatternRepository()
+
+    adapter = FinalPatternRepositoryAdapter(
+        repository=repository,
+    )
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=adapter.store,
+    )
+
+    manager.createPattern(
+        session_id="session-001",
+        user_id="user-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 9, 4, 10, 0, 0),
+            "file_extension": ".py",
+            "directory": "/project",
+        },
+    )
+
+    finalized = manager.finalizePattern(
+        "session-001"
+    )
+
+    assert finalized is not None
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
