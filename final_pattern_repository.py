@@ -1,108 +1,235 @@
 from __future__ import annotations
 
 import copy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
+from behavioral_identity import (
+    BehavioralIdentity,
+    BehavioralKey,
+)
+from behavioral_knowledge import BehavioralKnowledge
 from final_pattern_models import FinalPattern
 
 
 class FinalPatternRepository:
     """
-    In-memory repository for immutable historical Final Patterns.
-
-    The repository stores FinalPattern instances and keeps a separate
-    behavioral index for identifying repeated behavior.
+    In-memory repository for immutable historical Final Patterns and
+    consolidated behavioral knowledge.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        behavioral_identity: Optional[
+            BehavioralIdentity
+        ] = None,
+    ) -> None:
         self._patterns: Dict[str, FinalPattern] = {}
-        self._pattern_index: Dict[Tuple, str] = {}
 
-    def store(self, pattern: FinalPattern) -> bool:
+        self._pattern_index: Dict[
+            BehavioralKey,
+            str,
+        ] = {}
+
+        self._knowledge: Dict[
+            str,
+            BehavioralKnowledge,
+        ] = {}
+
+        self._behavioral_identity = (
+            behavioral_identity
+            or BehavioralIdentity()
+        )
+
+    def store(
+        self,
+        pattern: FinalPattern,
+    ) -> bool:
+        """
+        Store a new historical FinalPattern or record another
+        occurrence of an already-known behavioral blueprint.
+        """
+
         if not self._validate_final_pattern(pattern):
             return False
 
         try:
-            pattern_key = self._behavioral_key(pattern)
+            pattern_key = (
+                self._behavioral_identity.build_key(
+                    pattern
+                )
+            )
 
-            if pattern_key in self._pattern_index:
-                return False
+            existing_pattern_id = (
+                self._pattern_index.get(
+                    pattern_key
+                )
+            )
+
+            if existing_pattern_id is not None:
+                return self._record_repeated_behavior(
+                    existing_pattern_id,
+                    pattern,
+                )
 
             pattern_id = pattern.pattern_id
-
-            if not pattern_id:
-                return False
 
             if pattern_id in self._patterns:
                 return False
 
-            self._patterns[pattern_id] = copy.deepcopy(pattern)
-            self._pattern_index[pattern_key] = pattern_id
+            self._patterns[
+                pattern_id
+            ] = copy.deepcopy(pattern)
+
+            self._pattern_index[
+                pattern_key
+            ] = pattern_id
+
+            self._create_behavioral_knowledge(
+                pattern_id,
+                pattern,
+                pattern_key,
+            )
 
             return True
 
         except Exception:
             return False
 
-    def get(self, pattern_id: str) -> Optional[FinalPattern]:
+    def get(
+        self,
+        pattern_id: str,
+    ) -> Optional[FinalPattern]:
+        """
+        Return an independent copy of a historical FinalPattern.
+        """
+
         if not pattern_id:
             return None
 
-        pattern = self._patterns.get(pattern_id)
+        pattern = self._patterns.get(
+            pattern_id
+        )
 
         if pattern is None:
             return None
 
         return copy.deepcopy(pattern)
 
-    def get_all(self) -> List[FinalPattern]:
+    def get_all(
+        self,
+    ) -> List[FinalPattern]:
+        """
+        Return independent copies of all historical FinalPatterns.
+        """
+
         return [
             copy.deepcopy(pattern)
             for pattern in self._patterns.values()
         ]
 
+    def get_knowledge(
+        self,
+        knowledge_id: str,
+    ) -> Optional[BehavioralKnowledge]:
+        """
+        Return an independent snapshot of learned behavioral knowledge.
+        """
+
+        if not knowledge_id:
+            return None
+
+        knowledge = self._knowledge.get(
+            knowledge_id
+        )
+
+        if knowledge is None:
+            return None
+
+        return knowledge.snapshot()
+
+    def get_all_knowledge(
+        self,
+    ) -> List[BehavioralKnowledge]:
+        """
+        Return independent snapshots of all behavioral knowledge.
+        """
+
+        return [
+            knowledge.snapshot()
+            for knowledge in self._knowledge.values()
+        ]
+
     def count(self) -> int:
         return len(self._patterns)
 
-    def contains(self, pattern_id: str) -> bool:
+    def knowledge_count(self) -> int:
+        return len(self._knowledge)
+
+    def contains(
+        self,
+        pattern_id: str,
+    ) -> bool:
         if not pattern_id:
             return False
 
         return pattern_id in self._patterns
 
-    def _behavioral_key(
+    def _create_behavioral_knowledge(
         self,
+        pattern_id: str,
         pattern: FinalPattern,
-    ) -> Tuple:
-        observations = pattern.observations
+        pattern_key: BehavioralKey,
+    ) -> BehavioralKnowledge:
+        """
+        Create the initial knowledge aggregate for a new behavior.
+        """
 
-        operation_sequence = tuple(
-            str(
-                observation.get("operation_type", "")
-            ).upper()
-            for observation in observations
+        knowledge_id = (
+            f"knowledge-{pattern_id}"
         )
 
-        extensions = tuple(
-            str(
-                observation.get("file_extension", "")
-            ).lower()
-            for observation in observations
+        knowledge = BehavioralKnowledge(
+            knowledge_id=knowledge_id,
+            user_id=pattern.user_id,
+            behavior_key=pattern_key,
+            representative_pattern_id=pattern_id,
+            occurrence_count=1,
+            first_seen=pattern.created_at,
+            last_seen=pattern.created_at,
         )
 
-        directories = tuple(
-            str(
-                observation.get("directory", "")
-            )
-            for observation in observations
+        self._knowledge[
+            knowledge_id
+        ] = knowledge
+
+        return knowledge
+
+    def _record_repeated_behavior(
+        self,
+        representative_pattern_id: str,
+        incoming_pattern: FinalPattern,
+    ) -> bool:
+        """
+        Strengthen the existing behavioral knowledge without mutating
+        the historical FinalPattern.
+        """
+
+        knowledge_id = (
+            f"knowledge-{representative_pattern_id}"
         )
 
-        return (
-            pattern.user_id,
-            operation_sequence,
-            extensions,
-            directories,
+        knowledge = self._knowledge.get(
+            knowledge_id
         )
+
+        if knowledge is None:
+            return False
+
+        knowledge.record_occurrence(
+            incoming_pattern.created_at
+        )
+
+        return True
 
     def _validate_final_pattern(
         self,
@@ -111,7 +238,10 @@ class FinalPatternRepository:
         if pattern is None:
             return False
 
-        if not isinstance(pattern, FinalPattern):
+        if not isinstance(
+            pattern,
+            FinalPattern,
+        ):
             return False
 
         if not pattern.pattern_id:

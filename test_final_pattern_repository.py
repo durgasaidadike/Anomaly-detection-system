@@ -130,7 +130,7 @@ def test_duplicate_pattern_id_is_rejected():
     assert repository.count() == 1
 
 
-def test_repeated_behavior_is_not_stored_as_second_pattern():
+def test_repeated_behavior_strengthen_knowledge():
     repository = FinalPatternRepository()
 
     first = build_final_pattern(
@@ -144,8 +144,15 @@ def test_repeated_behavior_is_not_stored_as_second_pattern():
     )
 
     assert repository.store(first)
-    assert not repository.store(second)
+    assert repository.store(second)
+
+    # Only one pattern stored, but knowledge strengthened
     assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+
+    knowledge = repository.get_knowledge("knowledge-pattern-1")
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 2
 
 
 def test_different_behavior_creates_new_pattern():
@@ -246,3 +253,75 @@ def test_original_pattern_changes_do_not_affect_repository():
 
     assert stored is not None
     assert stored.observations[0]["directory"] == "/project"
+
+
+def test_repository_uses_injected_behavioral_identity():
+    class StubBehavioralIdentity:
+        def __init__(self):
+            self.calls = 0
+
+        def build_key(self, pattern):
+            self.calls += 1
+            return (
+                "stub",
+                pattern.pattern_id,
+            )
+
+    identity = StubBehavioralIdentity()
+
+    repository = FinalPatternRepository(
+        behavioral_identity=identity,
+    )
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+    )
+
+    assert repository.store(pattern)
+
+    assert identity.calls == 1
+
+
+def test_get_knowledge_returns_snapshot():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    knowledge = repository.get_knowledge("knowledge-pattern-1")
+
+    assert knowledge is not None
+    assert knowledge.knowledge_id == "knowledge-pattern-1"
+
+
+def test_get_all_knowledge_returns_all():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    assert repository.store(first)
+    assert repository.store(second)
+
+    knowledge_list = repository.get_all_knowledge()
+
+    assert len(knowledge_list) == 2
+    assert {k.knowledge_id for k in knowledge_list} == {
+        "knowledge-pattern-1",
+        "knowledge-pattern-2",
+    }
+
+
+def test_knowledge_count_starts_at_zero():
+    repository = FinalPatternRepository()
+
+    assert repository.knowledge_count() == 0
