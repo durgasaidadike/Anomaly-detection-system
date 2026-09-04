@@ -833,3 +833,125 @@ def test_direct_key_lookup_matches_pattern_search():
     assert key_result.knowledge_id == (
         search_result.behavioral_knowledge.knowledge_id
     )
+
+
+def test_empty_repository_is_integrity_valid():
+    repository = FinalPatternRepository()
+
+    assert repository.validate_integrity() is True
+
+
+def test_new_pattern_preserves_repository_integrity():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+    assert repository.validate_integrity() is True
+
+
+def test_repeated_behavior_preserves_repository_integrity():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert repository.store(second)
+
+    assert repository.validate_integrity() is True
+
+
+def test_multiple_behaviors_preserve_repository_integrity():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        operation_type="CREATE",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    third = build_final_pattern(
+        pattern_id="pattern-3",
+        session_id="session-3",
+        operation_type="MODIFY",
+    )
+
+    assert repository.store(first)
+    assert repository.store(second)
+    assert repository.store(third)
+
+    assert repository.count() == 3
+    assert repository.knowledge_count() == 3
+    assert repository.validate_integrity() is True
+
+
+def test_integrity_detects_orphaned_pattern_index():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    key = next(
+        iter(repository._pattern_index)
+    )
+
+    repository._pattern_index[key] = (
+        "missing-pattern"
+    )
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_orphaned_knowledge():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    repository._knowledge[
+        "knowledge-orphan"
+    ] = repository._knowledge[
+        "knowledge-pattern-1"
+    ].snapshot()
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_missing_recorded_id():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    repository._recorded_pattern_ids.clear()
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_missing_knowledge():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    repository._knowledge.clear()
+
+    assert repository.validate_integrity() is False

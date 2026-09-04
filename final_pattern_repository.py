@@ -253,6 +253,103 @@ class FinalPatternRepository:
 
         return pattern_id in self._patterns
 
+    def validate_integrity(self) -> bool:
+        """
+        Validate internal consistency between historical patterns,
+        behavioral indexes, behavioral knowledge, and recorded IDs.
+
+        This method is read-only and does not repair or mutate state.
+        """
+
+        try:
+            pattern_ids = set(
+                self._patterns.keys()
+            )
+
+            recorded_ids = set(
+                self._recorded_pattern_ids
+            )
+
+            # Every stored pattern must be marked as recorded.
+            if not pattern_ids.issubset(
+                recorded_ids
+            ):
+                return False
+
+            # Every recorded ID must correspond to a stored pattern.
+            if not recorded_ids.issubset(
+                pattern_ids
+            ):
+                return False
+
+            # Every behavioral index entry must point to an existing
+            # historical pattern.
+            for (
+                behavior_key,
+                pattern_id,
+            ) in self._pattern_index.items():
+                if pattern_id not in self._patterns:
+                    return False
+
+                pattern = self._patterns[
+                    pattern_id
+                ]
+
+                expected_key = (
+                    self._behavioral_identity.build_key(
+                        pattern
+                    )
+                )
+
+                if expected_key != behavior_key:
+                    return False
+
+            # Every stored pattern must have exactly one behavioral
+            # index entry pointing to it.
+            indexed_pattern_ids = set(
+                self._pattern_index.values()
+            )
+
+            if indexed_pattern_ids != pattern_ids:
+                return False
+
+            # Each historical representative pattern must have
+            # corresponding behavioral knowledge.
+            expected_knowledge_ids = {
+                f"knowledge-{pattern_id}"
+                for pattern_id in pattern_ids
+            }
+
+            if set(self._knowledge.keys()) != (
+                expected_knowledge_ids
+            ):
+                return False
+
+            # Every knowledge record must point to an existing
+            # representative historical pattern.
+            for knowledge_id, knowledge in (
+                self._knowledge.items()
+            ):
+                if knowledge.representative_pattern_id not in (
+                    pattern_ids
+                ):
+                    return False
+
+                expected_knowledge_id = (
+                    "knowledge-"
+                    + knowledge.representative_pattern_id
+                )
+
+                if knowledge_id != (
+                    expected_knowledge_id
+                ):
+                    return False
+
+            return True
+
+        except Exception:
+            return False
+
     def search(
         self,
         pattern: FinalPattern,
