@@ -581,3 +581,134 @@ def test_repository_search_delegates_to_search_service():
 
     assert result.matched is False
     assert stub.called is True
+
+
+def test_storing_same_pattern_twice_is_idempotent():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    assert repository.store(pattern)
+    assert repository.store(pattern)
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 1
+
+
+def test_same_pattern_id_is_not_counted_as_new_occurrence():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    assert repository.store(pattern)
+    assert repository.store(pattern)
+
+    assert repository.get_all()[0].pattern_id == (
+        "pattern-1"
+    )
+
+
+def test_different_pattern_id_same_behavior_counts_as_occurrence():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert repository.store(second)
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 2
+
+
+def test_different_pattern_id_same_behavior_is_not_stored_twice():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert repository.store(second)
+
+    assert repository.count() == 1
+    assert repository.contains("pattern-1")
+    assert not repository.contains("pattern-2")
+
+
+def test_failed_repeated_recording_does_not_mark_pattern_as_recorded():
+    class BrokenKnowledgeRepository(FinalPatternRepository):
+        def _record_repeated_behavior(
+            self,
+            representative_pattern_id,
+            incoming_pattern,
+        ):
+            return False
+
+    repository = BrokenKnowledgeRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert not repository.store(second)
+
+    assert "pattern-2" not in (
+        repository._recorded_pattern_ids
+    )
+
+
+def test_idempotent_store_does_not_change_search_result():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    assert repository.store(pattern)
+    assert repository.store(pattern)
+
+    result = repository.search(pattern)
+
+    assert result.matched is True
+
+    assert result.behavioral_knowledge is not None
+    assert result.behavioral_knowledge.occurrence_count == 1

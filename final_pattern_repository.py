@@ -39,6 +39,8 @@ class FinalPatternRepository:
             BehavioralKnowledge,
         ] = {}
 
+        self._recorded_pattern_ids = set()
+
         self._behavioral_identity = (
             behavioral_identity
             or BehavioralIdentity()
@@ -60,17 +62,41 @@ class FinalPatternRepository:
         """
         Store a new historical FinalPattern or record another
         occurrence of an already-known behavioral blueprint.
+
+        Re-submitting the same historical FinalPattern is idempotent.
+        Reusing an existing pattern ID for different behavior is rejected.
         """
 
         if not self._validate_final_pattern(pattern):
             return False
 
         try:
+            pattern_id = pattern.pattern_id
+
             pattern_key = (
                 self._behavioral_identity.build_key(
                     pattern
                 )
             )
+
+            existing_pattern = self._patterns.get(
+                pattern_id
+            )
+
+            if existing_pattern is not None:
+                existing_pattern_key = (
+                    self._behavioral_identity.build_key(
+                        existing_pattern
+                    )
+                )
+
+                if existing_pattern_key != pattern_key:
+                    return False
+
+                return True
+
+            if pattern_id in self._recorded_pattern_ids:
+                return True
 
             existing_pattern_id = (
                 self._pattern_index.get(
@@ -79,15 +105,17 @@ class FinalPatternRepository:
             )
 
             if existing_pattern_id is not None:
-                return self._record_repeated_behavior(
+                result = self._record_repeated_behavior(
                     existing_pattern_id,
                     pattern,
                 )
 
-            pattern_id = pattern.pattern_id
+                if result:
+                    self._recorded_pattern_ids.add(
+                        pattern_id
+                    )
 
-            if pattern_id in self._patterns:
-                return False
+                return result
 
             self._patterns[
                 pattern_id
@@ -101,6 +129,10 @@ class FinalPatternRepository:
                 pattern_id,
                 pattern,
                 pattern_key,
+            )
+
+            self._recorded_pattern_ids.add(
+                pattern_id
             )
 
             return True
