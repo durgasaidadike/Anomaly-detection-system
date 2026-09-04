@@ -174,6 +174,79 @@ class FinalPatternRepository:
 
         return pattern_id in self._patterns
 
+    def find_knowledge(
+        self,
+        pattern: FinalPattern,
+    ) -> Optional[BehavioralKnowledge]:
+        """
+        Find learned behavioral knowledge matching the supplied
+        FinalPattern using the repository's exact behavioral identity.
+
+        Returns an independent snapshot of the knowledge when a
+        matching behavioral blueprint exists.
+        """
+
+        if not self._validate_final_pattern(pattern):
+            return None
+
+        try:
+            pattern_key = (
+                self._behavioral_identity.build_key(
+                    pattern
+                )
+            )
+
+            pattern_id = self._pattern_index.get(
+                pattern_key
+            )
+
+            if pattern_id is None:
+                return None
+
+            knowledge_id = (
+                f"knowledge-{pattern_id}"
+            )
+
+            return self.get_knowledge(
+                knowledge_id
+            )
+
+        except Exception:
+            return None
+
+    def find_representative_pattern(
+        self,
+        pattern: FinalPattern,
+    ) -> Optional[FinalPattern]:
+        """
+        Find the historical FinalPattern representing the supplied
+        behavioral identity.
+
+        Returns an independent copy when the behavior is already known.
+        """
+
+        if not self._validate_final_pattern(pattern):
+            return None
+
+        try:
+            pattern_key = (
+                self._behavioral_identity.build_key(
+                    pattern
+                )
+            )
+
+            pattern_id = self._pattern_index.get(
+                pattern_key
+            )
+
+            if pattern_id is None:
+                return None
+
+            return self.get(pattern_id)
+
+        except Exception:
+            return None
+
     def _create_behavioral_knowledge(
         self,
         pattern_id: str,

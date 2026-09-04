@@ -325,3 +325,145 @@ def test_knowledge_count_starts_at_zero():
     repository = FinalPatternRepository()
 
     assert repository.knowledge_count() == 0
+
+
+def test_find_knowledge_returns_existing_behavior():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    assert repository.store(pattern)
+
+    knowledge = repository.find_knowledge(
+        pattern
+    )
+
+    assert knowledge is not None
+    assert knowledge.knowledge_id == (
+        "knowledge-pattern-1"
+    )
+    assert knowledge.representative_pattern_id == (
+        "pattern-1"
+    )
+
+
+def test_find_knowledge_returns_none_for_unknown_behavior():
+    repository = FinalPatternRepository()
+
+    known = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    unknown = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    assert repository.store(known)
+
+    assert repository.find_knowledge(
+        unknown
+    ) is None
+
+
+def test_find_knowledge_returns_snapshot():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    first = repository.find_knowledge(
+        pattern
+    )
+
+    second = repository.find_knowledge(
+        pattern
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first is not second
+
+
+def test_find_representative_pattern_returns_existing_pattern():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    repeated = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first)
+    assert repository.store(repeated)
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+
+    representative = repository.find_representative_pattern(
+        repeated
+    )
+
+    assert representative is not None
+    assert representative.pattern_id == (
+        "pattern-1"
+    )
+    assert representative.session_id == (
+        "session-1"
+    )
+
+
+def test_find_representative_pattern_returns_none_for_unknown():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.find_representative_pattern(
+        pattern
+    ) is None
+
+
+def test_search_does_not_modify_knowledge():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    repository.find_knowledge(pattern)
+    repository.find_knowledge(pattern)
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 1
+
+
+def test_search_does_not_modify_historical_pattern():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    repository.find_representative_pattern(
+        pattern
+    )
+
+    stored = repository.get("pattern-1")
+
+    assert stored is not None
+    assert stored.pattern_id == "pattern-1"
+    assert stored.observation_count == 1
