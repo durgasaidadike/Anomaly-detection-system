@@ -10,6 +10,9 @@ from behavioral_identity import (
 from behavioral_knowledge import BehavioralKnowledge
 from final_pattern_models import FinalPattern
 from repository_search_result import RepositorySearchResult
+from repository_search_service import (
+    RepositorySearchService,
+)
 
 
 class FinalPatternRepository:
@@ -39,6 +42,15 @@ class FinalPatternRepository:
         self._behavioral_identity = (
             behavioral_identity
             or BehavioralIdentity()
+        )
+
+        self._search_service = (
+            RepositorySearchService(
+                patterns=self._patterns,
+                pattern_index=self._pattern_index,
+                knowledge=self._knowledge,
+                behavioral_identity=self._behavioral_identity,
+            )
         )
 
     def store(
@@ -180,51 +192,12 @@ class FinalPatternRepository:
         pattern: FinalPattern,
     ) -> RepositorySearchResult:
         """
-        Search for an exact behavioral match.
-
-        Returns a RepositorySearchResult containing the historical
-        representative FinalPattern and its consolidated
-        BehavioralKnowledge when the behavior is already known.
+        Search the repository for an exact behavioral match.
         """
 
-        if not self._validate_final_pattern(pattern):
-            return RepositorySearchResult.no_match()
-
-        try:
-            pattern_key = (
-                self._behavioral_identity.build_key(
-                    pattern
-                )
-            )
-
-            pattern_id = self._pattern_index.get(
-                pattern_key
-            )
-
-            if pattern_id is None:
-                return RepositorySearchResult.no_match()
-
-            representative = self.get(
-                pattern_id
-            )
-
-            knowledge = self.get_knowledge(
-                f"knowledge-{pattern_id}"
-            )
-
-            if representative is None:
-                return RepositorySearchResult.no_match()
-
-            if knowledge is None:
-                return RepositorySearchResult.no_match()
-
-            return RepositorySearchResult.match(
-                representative_pattern=representative,
-                behavioral_knowledge=knowledge,
-            )
-
-        except Exception:
-            return RepositorySearchResult.no_match()
+        return self._search_service.search(
+            pattern
+        )
 
     def find_knowledge(
         self,

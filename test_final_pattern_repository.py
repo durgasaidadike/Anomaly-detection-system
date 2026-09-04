@@ -2,6 +2,9 @@ from datetime import datetime
 
 from final_pattern_models import FinalPattern
 from final_pattern_repository import FinalPatternRepository
+from repository_search_result import (
+    RepositorySearchResult,
+)
 
 
 def build_final_pattern(
@@ -550,3 +553,31 @@ def test_search_rejects_invalid_pattern():
     assert result.matched is False
     assert result.representative_pattern is None
     assert result.behavioral_knowledge is None
+
+
+def test_repository_search_delegates_to_search_service():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    class StubSearchService:
+        def __init__(self):
+            self.called = False
+
+        def search(self, incoming_pattern):
+            self.called = True
+
+            assert incoming_pattern is pattern
+
+            return RepositorySearchResult.no_match()
+
+    stub = StubSearchService()
+
+    repository._search_service = stub
+
+    result = repository.search(pattern)
+
+    assert result.matched is False
+    assert stub.called is True
