@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from behavioral_identity import BehavioralIdentity
 from final_pattern_models import FinalPattern
 from final_pattern_repository import FinalPatternRepository
 from repository_search_result import (
@@ -712,3 +713,123 @@ def test_idempotent_store_does_not_change_search_result():
 
     assert result.behavioral_knowledge is not None
     assert result.behavioral_knowledge.occurrence_count == 1
+
+
+def test_find_knowledge_by_key_returns_existing_knowledge():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    assert repository.store(pattern)
+
+    identity = BehavioralIdentity()
+
+    key = identity.build_key(pattern)
+
+    knowledge = repository.find_knowledge_by_key(
+        key
+    )
+
+    assert knowledge is not None
+    assert knowledge.knowledge_id == (
+        "knowledge-pattern-1"
+    )
+
+
+def test_find_knowledge_by_key_returns_none_for_unknown_key():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    identity = BehavioralIdentity()
+
+    key = identity.build_key(pattern)
+
+    assert repository.find_knowledge_by_key(
+        key
+    ) is None
+
+
+def test_find_knowledge_by_key_returns_snapshot():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    identity = BehavioralIdentity()
+
+    key = identity.build_key(pattern)
+
+    first = repository.find_knowledge_by_key(
+        key
+    )
+
+    second = repository.find_knowledge_by_key(
+        key
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first is not second
+
+
+def test_find_knowledge_by_key_does_not_increment_occurrence():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    identity = BehavioralIdentity()
+
+    key = identity.build_key(pattern)
+
+    repository.find_knowledge_by_key(key)
+    repository.find_knowledge_by_key(key)
+
+    knowledge = repository.find_knowledge_by_key(
+        key
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 1
+
+
+def test_find_knowledge_by_key_returns_none_for_empty_key():
+    repository = FinalPatternRepository()
+
+    assert repository.find_knowledge_by_key(
+        ()
+    ) is None
+
+
+def test_direct_key_lookup_matches_pattern_search():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    identity = BehavioralIdentity()
+
+    key = identity.build_key(pattern)
+
+    search_result = repository.search(
+        pattern
+    )
+
+    key_result = repository.find_knowledge_by_key(
+        key
+    )
+
+    assert search_result.matched is True
+    assert search_result.behavioral_knowledge is not None
+    assert key_result is not None
+
+    assert key_result.knowledge_id == (
+        search_result.behavioral_knowledge.knowledge_id
+    )

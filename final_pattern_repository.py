@@ -172,6 +172,40 @@ class FinalPatternRepository:
             for pattern in self._patterns.values()
         ]
 
+    def find_knowledge_by_key(
+        self,
+        behavior_key: BehavioralKey,
+    ) -> Optional[BehavioralKnowledge]:
+        """
+        Find consolidated behavioral knowledge directly from a
+        deterministic behavioral identity key.
+
+        Returns an independent snapshot when the behavioral identity
+        is already known.
+        """
+
+        if not behavior_key:
+            return None
+
+        try:
+            pattern_id = self._pattern_index.get(
+                behavior_key
+            )
+
+            if pattern_id is None:
+                return None
+
+            knowledge_id = (
+                f"knowledge-{pattern_id}"
+            )
+
+            return self.get_knowledge(
+                knowledge_id
+            )
+
+        except Exception:
+            return None
+
     def get_knowledge(
         self,
         knowledge_id: str,
