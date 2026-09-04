@@ -3,37 +3,35 @@ from __future__ import annotations
 import copy
 from typing import Dict, List, Optional, Tuple
 
-from candidate_pattern_models import CandidatePattern
+from final_pattern_models import FinalPattern
 
 
 class FinalPatternRepository:
     """
-    In-memory repository for immutable Final Patterns.
+    In-memory repository for immutable historical Final Patterns.
 
-    The repository consolidates repeated behavioral patterns instead
-    of storing duplicate behavioral knowledge.
+    The repository stores FinalPattern instances and keeps a separate
+    behavioral index for identifying repeated behavior.
     """
 
     def __init__(self) -> None:
-        self._patterns: Dict[str, CandidatePattern] = {}
+        self._patterns: Dict[str, FinalPattern] = {}
         self._pattern_index: Dict[Tuple, str] = {}
 
-    def store(self, pattern: CandidatePattern) -> bool:
+    def store(self, pattern: FinalPattern) -> bool:
         if not self._validate_final_pattern(pattern):
             return False
 
         try:
             pattern_key = self._behavioral_key(pattern)
 
-            existing_pattern_id = self._pattern_index.get(pattern_key)
+            if pattern_key in self._pattern_index:
+                return False
 
-            if existing_pattern_id is not None:
-                return self._merge_repeated_pattern(
-                    existing_pattern_id,
-                    pattern,
-                )
+            pattern_id = pattern.pattern_id
 
-            pattern_id = self._pattern_id(pattern)
+            if not pattern_id:
+                return False
 
             if pattern_id in self._patterns:
                 return False
@@ -46,7 +44,7 @@ class FinalPatternRepository:
         except Exception:
             return False
 
-    def get(self, pattern_id: str) -> Optional[CandidatePattern]:
+    def get(self, pattern_id: str) -> Optional[FinalPattern]:
         if not pattern_id:
             return None
 
@@ -57,7 +55,7 @@ class FinalPatternRepository:
 
         return copy.deepcopy(pattern)
 
-    def get_all(self) -> List[CandidatePattern]:
+    def get_all(self) -> List[FinalPattern]:
         return [
             copy.deepcopy(pattern)
             for pattern in self._patterns.values()
@@ -72,27 +70,30 @@ class FinalPatternRepository:
 
         return pattern_id in self._patterns
 
-    def _pattern_id(self, pattern: CandidatePattern) -> str:
-        return pattern.session_id
-
     def _behavioral_key(
         self,
-        pattern: CandidatePattern,
+        pattern: FinalPattern,
     ) -> Tuple:
-        observations = pattern.timeline.observations
+        observations = pattern.observations
 
         operation_sequence = tuple(
-            str(observation.get("operation_type", "")).upper()
+            str(
+                observation.get("operation_type", "")
+            ).upper()
             for observation in observations
         )
 
         extensions = tuple(
-            str(observation.get("file_extension", "")).lower()
+            str(
+                observation.get("file_extension", "")
+            ).lower()
             for observation in observations
         )
 
         directories = tuple(
-            str(observation.get("directory", ""))
+            str(
+                observation.get("directory", "")
+            )
             for observation in observations
         )
 
@@ -103,42 +104,26 @@ class FinalPatternRepository:
             directories,
         )
 
-    def _merge_repeated_pattern(
-        self,
-        existing_pattern_id: str,
-        incoming_pattern: CandidatePattern,
-    ) -> bool:
-        existing_pattern = self._patterns.get(existing_pattern_id)
-
-        if existing_pattern is None:
-            return False
-
-        existing_pattern.metadata.observation_count += (
-            incoming_pattern.metadata.observation_count
-        )
-
-        return True
-
     def _validate_final_pattern(
         self,
-        pattern: CandidatePattern,
+        pattern: FinalPattern,
     ) -> bool:
         if pattern is None:
             return False
 
-        if not isinstance(pattern, CandidatePattern):
+        if not isinstance(pattern, FinalPattern):
+            return False
+
+        if not pattern.pattern_id:
             return False
 
         if not pattern.session_id:
             return False
 
-        if not pattern.metadata.complete:
+        if not pattern.observations:
             return False
 
-        if pattern.is_empty():
-            return False
-
-        if pattern.metadata.interrupted:
+        if pattern.observation_count <= 0:
             return False
 
         return True
