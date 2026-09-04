@@ -2,7 +2,10 @@ from datetime import datetime
 
 from behavioral_knowledge import BehavioralKnowledge
 from final_pattern_models import FinalPattern
-from repository_search_result import RepositorySearchResult
+from repository_search_result import (
+    RepositorySearchResult,
+    SearchOutcome,
+)
 
 
 def build_pattern():
@@ -51,11 +54,12 @@ def test_no_match_factory_creates_unmatched_result():
     result = RepositorySearchResult.no_match()
 
     assert result.matched is False
+    assert result.outcome == SearchOutcome.NO_MATCH
     assert result.representative_pattern is None
     assert result.behavioral_knowledge is None
 
 
-def test_match_factory_creates_matched_result():
+def test_match_factory_creates_exact_match_result():
     pattern = build_pattern()
     knowledge = build_knowledge()
 
@@ -65,6 +69,7 @@ def test_match_factory_creates_matched_result():
     )
 
     assert result.matched is True
+    assert result.outcome == SearchOutcome.EXACT_MATCH
     assert result.representative_pattern is pattern
     assert result.behavioral_knowledge is knowledge
 
@@ -80,3 +85,9 @@ def test_result_is_immutable():
         raise AssertionError(
             "RepositorySearchResult should be immutable"
         )
+
+
+def test_search_outcomes_are_distinct():
+    assert SearchOutcome.NO_MATCH != (
+        SearchOutcome.EXACT_MATCH
+    )
