@@ -86,6 +86,101 @@ class CandidatePatternManager:
 
         return copy.deepcopy(pattern)
 
+    def getBehavioralSummary(
+        self,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Return a detached behavioral summary of the active
+        Candidate Pattern.
+
+        This is read-only output for downstream behavioral
+        intelligence components.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        return {
+            "session_id": pattern.session_id,
+            "user_id": pattern.user_id,
+            "observation_count": pattern.observation_count(),
+            "operational_characteristics": copy.deepcopy(
+                pattern.operational_characteristics
+            ),
+            "temporal_characteristics": copy.deepcopy(
+                pattern.temporal_characteristics
+            ),
+            "sequential_characteristics": copy.deepcopy(
+                pattern.sequential_characteristics
+            ),
+            "contextual_characteristics": copy.deepcopy(
+                pattern.contextual_characteristics
+            ),
+            "relationship_characteristics": copy.deepcopy(
+                pattern.relationship_characteristics
+            ),
+            "session_characteristics": copy.deepcopy(
+                pattern.session_characteristics
+            ),
+        }
+
+    def getPatternMetadata(
+        self,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Return detached metadata describing the current
+        Candidate Pattern state.
+
+        Downstream modules receive a read-only representation.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        metadata = pattern.metadata
+
+        return {
+            "status": metadata.status,
+            "observation_count": metadata.observation_count,
+            "complete": metadata.complete,
+            "interrupted": metadata.interrupted,
+            "finalized_at": metadata.finalized_at,
+        }
+
+    def getEvaluationSnapshot(
+        self,
+        session_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Return a detached evaluation view of the active
+        Candidate Pattern.
+
+        This combines the read-only outputs required by the
+        evaluation stage without allowing downstream modules
+        to modify active Candidate Pattern state.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        return {
+            "candidate_pattern": copy.deepcopy(pattern),
+            "behavioral_summary": self.getBehavioralSummary(
+                session_id
+            ),
+            "pattern_metadata": self.getPatternMetadata(
+                session_id
+            ),
+        }
+
     def updatePattern(
         self,
         session_id: str,

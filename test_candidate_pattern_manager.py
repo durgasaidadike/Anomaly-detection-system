@@ -2290,3 +2290,216 @@ def test_manager_can_handoff_to_final_pattern_repository_adapter():
     assert finalized is not None
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
+
+
+def test_get_behavioral_summary_returns_current_state():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+        user_id="user-001",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+    }
+
+    manager.updatePattern("session-001", first)
+    manager.updatePattern("session-001", second)
+
+    summary = manager.getBehavioralSummary(
+        "session-001"
+    )
+
+    assert summary is not None
+    assert summary["session_id"] == "session-001"
+    assert summary["user_id"] == "user-001"
+    assert summary["observation_count"] == 2
+
+    assert (
+        summary["operational_characteristics"]
+        ["total_operations"]
+        == 2
+    )
+
+    assert summary["sequential_characteristics"] == [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        },
+    ]
+
+
+def test_get_behavioral_summary_is_detached_from_active_pattern():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    summary = manager.getBehavioralSummary(
+        "session-001"
+    )
+
+    assert summary is not None
+
+    summary["operational_characteristics"][
+        "total_operations"
+    ] = 999
+
+    summary["sequential_characteristics"].clear()
+
+    pattern = manager.getCurrentPattern(
+        "session-001"
+    )
+
+    assert pattern is not None
+    assert (
+        pattern.operational_characteristics[
+            "total_operations"
+        ]
+        == 1
+    )
+
+    assert pattern.sequential_characteristics == [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        }
+    ]
+
+
+def test_get_pattern_metadata_reflects_current_lifecycle():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    metadata = manager.getPatternMetadata(
+        "session-001"
+    )
+
+    assert metadata is not None
+    assert metadata["status"] == PatternStatus.INITIALIZING
+    assert metadata["observation_count"] == 0
+    assert metadata["complete"] is False
+    assert metadata["interrupted"] is False
+    assert metadata["finalized_at"] is None
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    metadata = manager.getPatternMetadata(
+        "session-001"
+    )
+
+    assert metadata is not None
+    assert metadata["status"] == PatternStatus.LEARNING
+    assert metadata["observation_count"] == 1
+    assert metadata["complete"] is False
+
+
+def test_get_evaluation_snapshot_is_read_only():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+        user_id="user-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    evaluation = manager.getEvaluationSnapshot(
+        "session-001"
+    )
+
+    assert evaluation is not None
+    assert evaluation["candidate_pattern"] is not (
+        manager.getCurrentPattern("session-001")
+    )
+
+    assert evaluation["behavioral_summary"][
+        "observation_count"
+    ] == 1
+
+    assert evaluation["pattern_metadata"][
+        "status"
+    ] == PatternStatus.LEARNING
+
+    evaluation[
+        "candidate_pattern"
+    ].operational_characteristics["total_operations"] = 500
+
+    evaluation[
+        "behavioral_summary"
+    ]["observation_count"] = 500
+
+    evaluation[
+        "pattern_metadata"
+    ]["observation_count"] = 500
+
+    current = manager.getCurrentPattern(
+        "session-001"
+    )
+
+    assert current is not None
+
+    assert (
+        current.operational_characteristics[
+            "total_operations"
+        ]
+        == 1
+    )
+
+    assert current.observation_count() == 1
+    assert current.metadata.observation_count == 1
+
+
+def test_read_only_outputs_return_none_for_unknown_session():
+    manager = CandidatePatternManager()
+
+    assert manager.getBehavioralSummary(
+        "unknown-session"
+    ) is None
+
+    assert manager.getPatternMetadata(
+        "unknown-session"
+    ) is None
+
+    assert manager.getEvaluationSnapshot(
+        "unknown-session"
+    ) is None
