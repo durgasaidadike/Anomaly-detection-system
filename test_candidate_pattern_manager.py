@@ -6787,3 +6787,313 @@ def test_task_complexity_refines_as_behavior_diversifies():
     assert second_complexity[
         "relationship_count"
     ] == 1
+
+
+def test_first_and_last_observation_times_are_tracked():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-001",
+    )
+
+    first_time = datetime(2026, 1, 1, 10, 0, 0)
+    last_time = datetime(2026, 1, 1, 10, 5, 0)
+
+    manager.updatePattern(
+        "session-temporal-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": first_time,
+        },
+    )
+
+    manager.updatePattern(
+        "session-temporal-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": last_time,
+        },
+    )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["first_observation_time"] == first_time
+    assert temporal["last_observation_time"] == last_time
+
+
+def test_operation_intervals_are_incrementally_recorded():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-002",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 30),
+        datetime(2026, 1, 1, 10, 2, 0),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-002",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    assert pattern.temporal_characteristics[
+        "operation_intervals"
+    ] == [
+        30.0,
+        90.0,
+    ]
+
+    assert pattern.temporal_characteristics[
+        "time_between_operations"
+    ] == [
+        30.0,
+        90.0,
+    ]
+
+
+def test_idle_interval_is_recorded_when_gap_exceeds_threshold():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-003",
+    )
+
+    first_time = datetime(2026, 1, 1, 10, 0, 0)
+    second_time = datetime(2026, 1, 1, 10, 2, 0)
+
+    manager.updatePattern(
+        "session-temporal-003",
+        {
+            "operation_type": "CREATE",
+            "timestamp": first_time,
+        },
+    )
+
+    manager.updatePattern(
+        "session-temporal-003",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": second_time,
+        },
+    )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["idle_intervals"] == [120.0]
+    assert temporal["idle_time_seconds"] == 120.0
+
+
+def test_short_interval_is_not_classified_as_idle():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-004",
+    )
+
+    first_time = datetime(2026, 1, 1, 10, 0, 0)
+    second_time = datetime(2026, 1, 1, 10, 0, 30)
+
+    manager.updatePattern(
+        "session-temporal-004",
+        {
+            "operation_type": "CREATE",
+            "timestamp": first_time,
+        },
+    )
+
+    manager.updatePattern(
+        "session-temporal-004",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": second_time,
+        },
+    )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["idle_intervals"] == []
+    assert temporal["idle_time_seconds"] == 0.0
+
+
+def test_active_time_is_based_on_non_idle_intervals():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-005",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 30),
+        datetime(2026, 1, 1, 10, 2, 30),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-005",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["idle_time_seconds"] == 120.0
+    assert temporal["active_time_seconds"] == 30.0
+
+
+def test_working_rhythm_tracks_interval_statistics():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-006",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 3, 0),
+        datetime(2026, 1, 1, 10, 6, 0),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-006",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    rhythm = pattern.temporal_characteristics[
+        "working_rhythm"
+    ]
+
+    assert rhythm["observation_count"] == 4
+    assert rhythm["min_interval_seconds"] == 60.0
+    assert rhythm["max_interval_seconds"] == 180.0
+    assert rhythm["average_interval_seconds"] == 120.0
+
+
+def test_burst_activity_is_detected_for_short_intervals():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-007",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 1),
+        datetime(2026, 1, 1, 10, 0, 2),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-007",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["burst_count"] >= 1
+    assert temporal["burst_activity"] is True
+
+
+def test_normal_activity_does_not_create_burst():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-008",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 2, 0),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-008",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["burst_count"] == 0
+    assert temporal["burst_activity"] is False
+
+
+def test_continuous_activity_is_tracked_for_close_operations():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-009",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 1),
+        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 3),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-009",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["continuous_activity"] is True
+
+
+def test_idle_period_and_burst_can_coexist():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-temporal-010",
+    )
+
+    times = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 1),
+        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 2, 2),
+        datetime(2026, 1, 1, 10, 2, 3),
+    ]
+
+    for timestamp in times:
+        manager.updatePattern(
+            "session-temporal-010",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["idle_time_seconds"] == 120.0
+    assert temporal["burst_count"] >= 2
+    assert temporal["burst_activity"] is True
+    assert temporal["continuous_activity"] is False
