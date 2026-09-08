@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import copy
 import pytest
 
@@ -5970,3 +5970,477 @@ def test_finalization_keeps_finalized_pattern_available_until_reset():
     assert manager.getCurrentPattern(
         "session-final-010"
     ) is None
+
+
+def test_non_dict_observation_does_not_corrupt_pattern():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-001",
+    )
+
+    valid = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-001",
+        valid,
+    )
+
+    result = manager.updatePattern(
+        "session-edge-001",
+        "not-a-dictionary",
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [valid]
+
+
+def test_signal_without_timestamp_is_rejected_without_corruption():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-002",
+    )
+
+    valid = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-002",
+        valid,
+    )
+
+    invalid = {
+        "operation_type": "MODIFY",
+    }
+
+    result = manager.updatePattern(
+        "session-edge-002",
+        invalid,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [valid]
+
+
+def test_raw_event_markers_are_rejected():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-003",
+    )
+
+    valid = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-003",
+        valid,
+    )
+
+    raw_event = {
+        "event_type": "created",
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-edge-003",
+        raw_event,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [valid]
+
+
+@pytest.mark.parametrize(
+    "raw_marker",
+    [
+        "event_action",
+        "filesystem_event",
+        "raw_event",
+    ],
+)
+def test_all_supported_raw_event_markers_are_rejected(
+    raw_marker,
+):
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-004",
+    )
+
+    valid = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-004",
+        valid,
+    )
+
+    invalid = {
+        raw_marker: "raw-value",
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-edge-004",
+        invalid,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [valid]
+
+
+def test_missing_session_start_time_uses_manager_timestamp():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-005",
+        session_start_time=None,
+    )
+
+    assert pattern.session_start_time is not None
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": pattern.session_start_time,
+    }
+
+    manager.updatePattern(
+        "session-edge-005",
+        observation,
+    )
+
+    session_end = (
+        pattern.session_start_time
+        + timedelta(minutes=5)
+    )
+
+    result = manager.completeSession(
+        "session-edge-005",
+        session_end,
+    )
+
+    assert result is pattern
+    assert pattern.session_end_time == session_end
+    assert pattern.session_duration_seconds == 300.0
+
+
+def test_end_time_before_start_time_is_rejected():
+    manager = CandidatePatternManager()
+
+    start = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-edge-006",
+        session_start_time=start,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": start,
+    }
+
+    manager.updatePattern(
+        "session-edge-006",
+        observation,
+    )
+
+    result = manager.completeSession(
+        "session-edge-006",
+        datetime(2026, 1, 1, 9, 0, 0),
+    )
+
+    assert result is pattern
+    assert pattern.session_end_time is None
+    assert pattern.session_duration_seconds is None
+
+    assert (
+        "session_end_time"
+        not in pattern.temporal_characteristics
+    )
+
+
+def test_failed_incremental_update_restores_complete_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-007",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-007",
+        first,
+        context={
+            "working_directory": "/project",
+            "environment": "development",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    original_state = copy.deepcopy(
+        pattern.__dict__
+    )
+
+    def failing_session_update(*args, **kwargs):
+        raise RuntimeError(
+            "simulated session characteristic failure"
+        )
+
+    manager._update_session_characteristics = (
+        failing_session_update
+    )
+
+    result = manager.updatePattern(
+        "session-edge-007",
+        second,
+        context={
+            "working_directory": "/changed",
+            "environment": "production",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "other.py",
+            }
+        ],
+    )
+
+    assert result is pattern
+    assert pattern.__dict__ == original_state
+
+
+def test_failed_first_update_leaves_no_partial_context_history():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-008",
+    )
+
+    def failing_contextual_update(*args, **kwargs):
+        raise RuntimeError(
+            "simulated contextual update failure"
+        )
+
+    manager._update_contextual_characteristics = (
+        failing_contextual_update
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-edge-008",
+        observation,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.context.values == {}
+    assert pattern.contextual_characteristics == {}
+    assert pattern.operational_characteristics == {}
+    assert pattern.temporal_characteristics == {}
+    assert pattern.sequential_characteristics == []
+    assert pattern.relationship_characteristics == []
+    assert pattern.session_characteristics == {}
+    assert pattern.metadata.observation_count == 0
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_failed_update_preserves_object_identity():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-009",
+    )
+
+    def failing_update(*args, **kwargs):
+        raise RuntimeError(
+            "simulated update failure"
+        )
+
+    manager._update_relationship_characteristics = (
+        failing_update
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-edge-009",
+        observation,
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    current = manager.getCurrentPattern(
+        "session-edge-009",
+    )
+
+    assert result is pattern
+    assert current is pattern
+
+
+def test_pattern_can_continue_after_a_failed_update():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-010",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-010",
+        first,
+    )
+
+    original_method = (
+        manager._update_session_characteristics
+    )
+
+    def failing_once(pattern, *args, **kwargs):
+        manager._update_session_characteristics = (
+            original_method
+        )
+        raise RuntimeError(
+            "simulated one-time failure"
+        )
+
+    manager._update_session_characteristics = (
+        failing_once
+    )
+
+    manager.updatePattern(
+        "session-edge-010",
+        second,
+    )
+
+    assert pattern.observation_count() == 1
+
+    retry = manager.updatePattern(
+        "session-edge-010",
+        second,
+    )
+
+    assert retry is pattern
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations == [
+        first,
+        second,
+    ]
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_freeze_preserves_state_after_failed_update():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-edge-011",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-011",
+        first,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    original_state = copy.deepcopy(
+        pattern.__dict__
+    )
+
+    def failing_update(*args, **kwargs):
+        raise RuntimeError("simulated failure")
+
+    manager._update_operational_characteristics = (
+        failing_update
+    )
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-edge-011",
+        second,
+    )
+
+    frozen = manager.freezePattern(
+        "session-edge-011",
+    )
+
+    assert frozen is pattern
+    assert pattern.metadata.interrupted is True
+
+    current_state = copy.deepcopy(
+        pattern.__dict__
+    )
+
+    assert current_state["timeline"] == (
+        original_state["timeline"]
+    )
+    assert current_state["context"] == (
+        original_state["context"]
+    )
+    assert current_state[
+        "operational_characteristics"
+    ] == original_state[
+        "operational_characteristics"
+    ]
