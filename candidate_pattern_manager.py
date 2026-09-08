@@ -294,7 +294,10 @@ class CandidatePatternManager:
 
             self._update_session_characteristics(pattern)
 
-            if previous_state.metadata.status == PatternStatus.INITIALIZING:
+            if previous_state.metadata.status in (
+                PatternStatus.INITIALIZING,
+                PatternStatus.EVALUATING,
+            ):
                 pattern.metadata.status = PatternStatus.LEARNING
 
             return pattern
@@ -307,6 +310,68 @@ class CandidatePatternManager:
                 )
 
             return pattern
+
+    def beginEvaluation(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Mark the active Candidate Pattern as being evaluated.
+
+        Evaluation is a lifecycle state only. The Candidate Pattern
+        Manager does not calculate similarity, drift, confidence,
+        or anomaly scores.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        if pattern.metadata.interrupted:
+            return pattern
+
+        if pattern.metadata.status == PatternStatus.COMPLETED:
+            return pattern
+
+        if pattern.metadata.status == PatternStatus.FINALIZING:
+            return pattern
+
+        if pattern.observation_count() == 0:
+            return pattern
+
+        pattern.metadata.status = PatternStatus.EVALUATING
+
+        return pattern
+
+    def resumeLearning(
+        self,
+        session_id: str,
+    ) -> Optional[CandidatePattern]:
+        """
+        Return an actively evaluated Candidate Pattern to the
+        learning state.
+
+        No behavioral information is changed by this transition.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        if pattern.metadata.interrupted:
+            return pattern
+
+        if pattern.metadata.status == PatternStatus.COMPLETED:
+            return pattern
+
+        if pattern.metadata.status != PatternStatus.EVALUATING:
+            return pattern
+
+        pattern.metadata.status = PatternStatus.LEARNING
+
+        return pattern
 
     def freezePattern(
         self,

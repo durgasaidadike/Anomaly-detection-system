@@ -3634,3 +3634,145 @@ def test_invalid_session_lookup_returns_none():
         )
         is not None
     )
+
+
+def test_begin_evaluation_changes_status():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    pattern = manager.beginEvaluation(
+        "session-1"
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.metadata.status
+        == PatternStatus.EVALUATING
+    )
+
+
+def test_resume_learning_restores_learning_status():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.beginEvaluation("session-1")
+
+    pattern = manager.resumeLearning(
+        "session-1"
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.metadata.status
+        == PatternStatus.LEARNING
+    )
+
+
+def test_new_observation_during_evaluation_returns_to_learning():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.beginEvaluation("session-1")
+
+    pattern = manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.metadata.status
+        == PatternStatus.LEARNING
+    )
+
+    assert (
+        pattern.observation_count()
+        == 2
+    )
+
+
+def test_empty_pattern_cannot_begin_evaluation():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    pattern = manager.beginEvaluation(
+        "session-1"
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.metadata.status
+        == PatternStatus.INITIALIZING
+    )
+
+
+def test_completed_pattern_cannot_begin_evaluation():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.finalizePattern("session-1")
+
+    pattern = manager.beginEvaluation(
+        "session-1"
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.metadata.status
+        == PatternStatus.COMPLETED
+    )
