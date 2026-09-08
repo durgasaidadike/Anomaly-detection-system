@@ -3971,3 +3971,409 @@ def test_finalization_is_isolated_between_sessions():
     )
 
     assert other.observation_count() == 1
+
+
+def test_lifecycle_initializing_to_learning():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-001",
+    )
+
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    updated = manager.updatePattern(
+        "session-lifecycle-001",
+        observation,
+    )
+
+    assert updated is pattern
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_lifecycle_learning_to_evaluating():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-002",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-002",
+        observation,
+    )
+
+    evaluated = manager.beginEvaluation(
+        "session-lifecycle-002",
+    )
+
+    assert evaluated is pattern
+    assert pattern.metadata.status == PatternStatus.EVALUATING
+
+
+def test_lifecycle_evaluating_to_learning():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-003",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-003",
+        observation,
+    )
+
+    manager.beginEvaluation(
+        "session-lifecycle-003",
+    )
+
+    resumed = manager.resumeLearning(
+        "session-lifecycle-003",
+    )
+
+    assert resumed is pattern
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_update_after_evaluation_returns_pattern_to_learning():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-004",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-004",
+        first,
+    )
+
+    manager.beginEvaluation(
+        "session-lifecycle-004",
+    )
+
+    assert pattern.metadata.status == PatternStatus.EVALUATING
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    updated = manager.updatePattern(
+        "session-lifecycle-004",
+        second,
+    )
+
+    assert updated is pattern
+    assert pattern.observation_count() == 2
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_empty_pattern_cannot_enter_evaluation():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-005",
+    )
+
+    result = manager.beginEvaluation(
+        "session-lifecycle-005",
+    )
+
+    assert result is pattern
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_interrupted_pattern_cannot_resume_learning():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-006",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-006",
+        observation,
+    )
+
+    manager.freezePattern(
+        "session-lifecycle-006",
+    )
+
+    result = manager.resumeLearning(
+        "session-lifecycle-006",
+    )
+
+    assert result is pattern
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_interrupted_pattern_cannot_enter_evaluation():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-007",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-007",
+        observation,
+    )
+
+    manager.freezePattern(
+        "session-lifecycle-007",
+    )
+
+    result = manager.beginEvaluation(
+        "session-lifecycle-007",
+    )
+
+    assert result is pattern
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_interrupted_pattern_cannot_complete():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-008",
+        session_start_time=start_time,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": start_time,
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-008",
+        observation,
+    )
+
+    manager.freezePattern(
+        "session-lifecycle-008",
+    )
+
+    result = manager.completeSession(
+        "session-lifecycle-008",
+        datetime(2026, 1, 1, 11, 0, 0),
+    )
+
+    assert result is pattern
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
+    assert pattern.session_end_time is None
+    assert pattern.session_duration_seconds is None
+
+
+def test_interrupted_pattern_cannot_finalize():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-009",
+        session_start_time=start_time,
+    )
+
+    observation = {
+        "operation_type": "DELETE",
+        "timestamp": start_time,
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-009",
+        observation,
+    )
+
+    manager.freezePattern(
+        "session-lifecycle-009",
+    )
+
+    result = manager.finalizePattern(
+        "session-lifecycle-009",
+    )
+
+    assert result is None
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.status != PatternStatus.COMPLETED
+
+
+def test_completed_pattern_cannot_return_to_learning():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-010",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-010",
+        observation,
+    )
+
+    manager.finalizePattern(
+        "session-lifecycle-010",
+    )
+
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+    result = manager.resumeLearning(
+        "session-lifecycle-010",
+    )
+
+    assert result is pattern
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_completed_pattern_cannot_reenter_evaluation():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-011",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-011",
+        observation,
+    )
+
+    manager.finalizePattern(
+        "session-lifecycle-011",
+    )
+
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+    result = manager.beginEvaluation(
+        "session-lifecycle-011",
+    )
+
+    assert result is pattern
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_completed_pattern_does_not_accept_new_observations():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-012",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-012",
+        first,
+    )
+
+    manager.finalizePattern(
+        "session-lifecycle-012",
+    )
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern(
+        "session-lifecycle-012",
+        second,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [first]
+
+
+def test_freeze_preserves_latest_valid_state_after_evaluation():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-lifecycle-013",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-013",
+        first,
+    )
+
+    manager.beginEvaluation(
+        "session-lifecycle-013",
+    )
+
+    manager.resumeLearning(
+        "session-lifecycle-013",
+    )
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-lifecycle-013",
+        second,
+    )
+
+    manager.freezePattern(
+        "session-lifecycle-013",
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations == [
+        first,
+        second,
+    ]
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
