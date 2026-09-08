@@ -30,6 +30,27 @@ class CandidatePatternManager:
         self._active_patterns: Dict[str, CandidatePattern] = {}
         self._final_pattern_handler = final_pattern_handler
 
+    def _validate_session_id(
+        self,
+        session_id: str,
+    ) -> None:
+        """
+        Validate the session identity required to create or access
+        a Candidate Pattern.
+
+        A Candidate Pattern cannot exist without a valid session.
+        """
+
+        if not isinstance(session_id, str):
+            raise ValueError(
+                "session_id must be a string"
+            )
+
+        if not session_id.strip():
+            raise ValueError(
+                "session_id cannot be empty"
+            )
+
     def createPattern(
         self,
         session_id: str,
@@ -39,6 +60,8 @@ class CandidatePatternManager:
         """
         Create and register a Candidate Pattern for a session.
         """
+
+        self._validate_session_id(session_id)
 
         if session_id in self._active_patterns:
             return self._active_patterns[session_id]
@@ -65,6 +88,11 @@ class CandidatePatternManager:
 
         Returns None when no active Candidate Pattern exists.
         """
+
+        try:
+            self._validate_session_id(session_id)
+        except ValueError:
+            return None
 
         return self._active_patterns.get(session_id)
 

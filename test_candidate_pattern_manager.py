@@ -1,5 +1,6 @@
 from datetime import datetime
 import copy
+import pytest
 
 from candidate_pattern_manager import CandidatePatternManager
 from candidate_pattern_models import PatternStatus
@@ -3582,3 +3583,54 @@ def test_alternate_behavioral_signal_is_accepted():
 
     assert pattern is not None
     assert pattern.observation_count() == 1
+
+
+def test_create_pattern_rejects_empty_session_id():
+    manager = CandidatePatternManager()
+
+    with pytest.raises(ValueError):
+        manager.createPattern("")
+
+
+def test_create_pattern_rejects_whitespace_session_id():
+    manager = CandidatePatternManager()
+
+    with pytest.raises(ValueError):
+        manager.createPattern("   ")
+
+
+def test_create_pattern_rejects_non_string_session_id():
+    manager = CandidatePatternManager()
+
+    with pytest.raises(ValueError):
+        manager.createPattern(123)
+
+
+def test_valid_session_id_creates_candidate_pattern():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        "session-001"
+    )
+
+    assert pattern is not None
+    assert pattern.session_id == "session-001"
+
+
+def test_invalid_session_lookup_returns_none():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        "session-001"
+    )
+
+    result = manager.getCurrentPattern("")
+
+    assert result is None
+
+    assert (
+        manager.getCurrentPattern(
+            "session-001"
+        )
+        is not None
+    )
