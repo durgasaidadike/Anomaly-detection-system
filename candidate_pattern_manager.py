@@ -115,6 +115,12 @@ class CandidatePatternManager:
 
             self._validate_observation(observation)
 
+            if not self._is_chronologically_valid(
+                pattern,
+                observation,
+            ):
+                return pattern
+
             # Capture the complete state before any mutation occurs.
             previous_state = copy.deepcopy(pattern)
 
@@ -302,6 +308,35 @@ class CandidatePatternManager:
 
         if "timestamp" not in observation:
             raise ValueError("Observation must contain a timestamp")
+
+    def _is_chronologically_valid(
+        self,
+        pattern: CandidatePattern,
+        observation: Dict[str, Any],
+    ) -> bool:
+        """
+        Verify that a new behavioral observation does not move
+        the Candidate Pattern backwards in time.
+
+        Candidate Pattern evolution is chronological.
+        Historical observations are never reordered.
+        """
+
+        timestamp = observation.get("timestamp")
+
+        if timestamp is None:
+            return False
+
+        if not pattern.timeline.observations:
+            return True
+
+        last_observation = pattern.timeline.observations[-1]
+        last_timestamp = last_observation.get("timestamp")
+
+        if last_timestamp is None:
+            return True
+
+        return timestamp >= last_timestamp
 
     def _restore_pattern_state(
         self,

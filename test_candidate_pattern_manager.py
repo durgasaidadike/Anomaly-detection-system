@@ -860,18 +860,45 @@ def test_initializing_pattern_can_be_updated():
 def test_learning_pattern_can_continue_updates():
     manager = CandidatePatternManager()
 
-    manager.createPattern(
-        session_id="session-001",
-    )
+    manager.createPattern(session_id="session-001")
 
     first = {
         "operation_type": "CREATE",
         "timestamp": datetime.now(),
     }
 
+    manager.updatePattern("session-001", first)
+
+    pattern = manager.getCurrentPattern("session-001")
+
+    assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
     second = {
         "operation_type": "MODIFY",
         "timestamp": datetime.now(),
+    }
+
+    result = manager.updatePattern("session-001", second)
+
+    assert result is pattern
+    assert result.observation_count() == 2
+    assert result.metadata.status == PatternStatus.LEARNING
+
+
+def test_out_of_order_observation_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(session_id="session-001")
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    earlier = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
     }
 
     manager.updatePattern(
@@ -879,14 +906,89 @@ def test_learning_pattern_can_continue_updates():
         first,
     )
 
-    result = manager.updatePattern(
+    pattern = manager.updatePattern(
+        "session-001",
+        earlier,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations[0] == first
+
+
+def test_equal_timestamp_observation_is_allowed():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(session_id="session-001")
+
+    timestamp = datetime(2026, 1, 1, 10, 0, 0)
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": timestamp,
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": timestamp,
+    }
+
+    manager.updatePattern(
+        "session-001",
+        first,
+    )
+
+    pattern = manager.updatePattern(
         "session-001",
         second,
     )
 
-    assert result is not None
-    assert result.metadata.status == PatternStatus.LEARNING
-    assert result.observation_count() == 2
+    assert pattern is not None
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations == [
+        first,
+        second,
+    ]
+
+
+def test_chronological_order_is_preserved():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(session_id="session-001")
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-001",
+            observation,
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    timestamps = [
+        observation["timestamp"]
+        for observation in pattern.timeline.observations
+    ]
+
+    assert timestamps == sorted(timestamps)
 
 
 def test_rejected_lifecycle_update_preserves_latest_valid_state():
@@ -1190,18 +1292,30 @@ def test_temporal_characteristics_handle_out_of_order_timestamps():
         20,
     )
 
-    for timestamp in (
-        first_timestamp,
-        earlier_timestamp,
-        later_timestamp,
-    ):
-        manager.updatePattern(
-            "session-001",
-            {
-                "operation_type": "MODIFY",
-                "timestamp": timestamp,
-            },
-        )
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": first_timestamp,
+        },
+    )
+
+    # Out-of-order observation is rejected
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": earlier_timestamp,
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": later_timestamp,
+        },
+    )
 
     pattern = manager.getCurrentPattern(
         "session-001",
@@ -1211,9 +1325,10 @@ def test_temporal_characteristics_handle_out_of_order_timestamps():
 
     characteristics = pattern.temporal_characteristics
 
-    assert characteristics["first_observation_time"] == earlier_timestamp
+    # Only first and later timestamps are accepted (earlier is rejected)
+    assert characteristics["first_observation_time"] == first_timestamp
     assert characteristics["last_observation_time"] == later_timestamp
-    assert characteristics["duration_seconds"] == 17.0
+    assert characteristics["duration_seconds"] == 10.0
 
 
 def test_temporal_characteristics_require_valid_timestamp():
