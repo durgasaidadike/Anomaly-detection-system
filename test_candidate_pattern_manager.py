@@ -6444,3 +6444,346 @@ def test_freeze_preserves_state_after_failed_update():
     ] == original_state[
         "operational_characteristics"
     ]
+
+
+def test_session_observation_count_tracks_pattern_growth():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-001",
+    )
+
+    assert pattern.session_characteristics == {}
+
+    manager.updatePattern(
+        "session-metrics-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    assert pattern.session_characteristics[
+        "observation_count"
+    ] == 1
+
+    manager.updatePattern(
+        "session-metrics-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    assert pattern.session_characteristics[
+        "observation_count"
+    ] == 2
+
+
+def test_operation_diversity_counts_unique_operation_types():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-002",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-metrics-002",
+            observation,
+        )
+
+    assert pattern.session_characteristics[
+        "operation_diversity"
+    ] == 3
+
+
+def test_operation_diversity_does_not_count_duplicates():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-003",
+    )
+
+    for minute in range(4):
+        manager.updatePattern(
+            "session-metrics-003",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": datetime(
+                    2026,
+                    1,
+                    1,
+                    10,
+                    minute,
+                    0,
+                ),
+            },
+        )
+
+    assert pattern.session_characteristics[
+        "operation_diversity"
+    ] == 1
+
+
+def test_behavioral_density_is_derived_from_activity():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-004",
+        session_start_time=datetime(2026, 1, 1, 10, 0, 0),
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-metrics-004",
+            observation,
+        )
+
+    density = pattern.session_characteristics[
+        "behavioral_density"
+    ]
+
+    assert density is not None
+    assert density > 0
+
+
+def test_behavioral_density_changes_when_session_activity_changes():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-005",
+        session_start_time=datetime(2026, 1, 1, 10, 0, 0),
+    )
+
+    manager.updatePattern(
+        "session-metrics-005",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    first_density = pattern.session_characteristics[
+        "behavioral_density"
+    ]
+
+    manager.updatePattern(
+        "session-metrics-005",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    second_density = pattern.session_characteristics[
+        "behavioral_density"
+    ]
+
+    assert second_density != first_density
+
+
+def test_behavioral_consistency_exists_for_multiple_operations():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-006",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 3, 0),
+    ]
+
+    for index, timestamp in enumerate(timestamps):
+        manager.updatePattern(
+            "session-metrics-006",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    consistency = pattern.session_characteristics[
+        "behavioral_consistency"
+    ]
+
+    assert consistency is not None
+    assert 0.0 <= consistency <= 1.0
+
+
+def test_consistent_intervals_produce_high_consistency():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-007",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 3, 0),
+    ]
+
+    for timestamp in timestamps:
+        manager.updatePattern(
+            "session-metrics-007",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    consistency = pattern.session_characteristics[
+        "behavioral_consistency"
+    ]
+
+    assert consistency == 1.0
+
+
+def test_irregular_intervals_reduce_behavioral_consistency():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-008",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 5, 0),
+        datetime(2026, 1, 1, 10, 6, 0),
+    ]
+
+    for timestamp in timestamps:
+        manager.updatePattern(
+            "session-metrics-008",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    consistency = pattern.session_characteristics[
+        "behavioral_consistency"
+    ]
+
+    assert 0.0 <= consistency < 1.0
+
+
+def test_task_complexity_contains_session_level_dimensions():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-009",
+    )
+
+    manager.updatePattern(
+        "session-metrics-009",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    complexity = pattern.session_characteristics[
+        "task_complexity"
+    ]
+
+    assert complexity["operation_diversity"] == 1
+    assert complexity["relationship_count"] == 1
+
+
+def test_task_complexity_refines_as_behavior_diversifies():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-metrics-010",
+    )
+
+    manager.updatePattern(
+        "session-metrics-010",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    first_complexity = copy.deepcopy(
+        pattern.session_characteristics[
+            "task_complexity"
+        ]
+    )
+
+    manager.updatePattern(
+        "session-metrics-010",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    second_complexity = pattern.session_characteristics[
+        "task_complexity"
+    ]
+
+    assert first_complexity[
+        "operation_diversity"
+    ] == 1
+
+    assert second_complexity[
+        "operation_diversity"
+    ] == 2
+
+    assert second_complexity[
+        "relationship_count"
+    ] == 1
