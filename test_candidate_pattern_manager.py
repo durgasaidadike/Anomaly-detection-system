@@ -1,4 +1,5 @@
 from datetime import datetime
+import copy
 
 from candidate_pattern_manager import CandidatePatternManager
 from candidate_pattern_models import PatternStatus
@@ -2919,3 +2920,258 @@ def test_duplicate_observation_does_not_change_operation_distribution():
     assert characteristics["operation_distribution"] == {
         "CREATE": 1.0,
     }
+
+
+def test_context_refinement_preserves_previous_value():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+        context={
+            "session_intensity": "LOW",
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+        context={
+            "session_intensity": "HIGH",
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.context.values[
+            "session_intensity"
+        ]
+        == "HIGH"
+    )
+
+    assert (
+        pattern.context.values[
+            "session_intensity__history"
+        ]
+        == [
+            {
+                "value": "LOW",
+                "superseded_by": "HIGH",
+            },
+            {
+                "value": "HIGH",
+                "superseded_by": None,
+            },
+        ]
+    )
+
+
+def test_context_refinement_tracks_repeated_same_value():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 1),
+        datetime(2026, 1, 1, 10, 0, 2),
+    ]
+
+    for timestamp in timestamps:
+        manager.updatePattern(
+            "session-001",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+            context={
+                "working_directory": "/project",
+            },
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.context.values[
+            "working_directory"
+        ]
+        == "/project"
+    )
+
+    assert (
+        pattern.context.values[
+            "working_directory__observation_count"
+        ]
+        == 3
+    )
+
+
+def test_context_refinement_preserves_multiple_dimensions():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+        context={
+            "working_directory": "/project",
+            "active_application": "editor",
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+        context={
+            "working_directory": "/project/src",
+            "active_application": "terminal",
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = (
+        pattern.contextual_characteristics
+    )
+
+    assert (
+        characteristics["working_directory"]
+        == "/project/src"
+    )
+
+    assert (
+        characteristics["active_application"]
+        == "terminal"
+    )
+
+    assert pattern.context.values[
+        "working_directory__history"
+    ] == [
+        {
+            "value": "/project",
+            "superseded_by": "/project/src",
+        },
+        {
+            "value": "/project/src",
+            "superseded_by": None,
+        },
+    ]
+
+    assert pattern.context.values[
+        "active_application__history"
+    ] == [
+        {
+            "value": "editor",
+            "superseded_by": "terminal",
+        },
+        {
+            "value": "terminal",
+            "superseded_by": None,
+        },
+    ]
+
+
+def test_context_refinement_rolls_back_without_losing_history():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+        context={
+            "session_intensity": "LOW",
+        },
+    )
+
+    original_context = copy.deepcopy(
+        pattern.context.values
+    )
+
+    original_contextual = copy.deepcopy(
+        pattern.contextual_characteristics
+    )
+
+    def failing_relationship_update(*args, **kwargs):
+        raise RuntimeError(
+            "simulated refinement failure"
+        )
+
+    manager._update_relationship_characteristics = (
+        failing_relationship_update
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+        context={
+            "session_intensity": "HIGH",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "important.txt",
+            }
+        ],
+    )
+
+    assert pattern.context.values == original_context
+
+    assert (
+        pattern.contextual_characteristics
+        == original_contextual
+    )

@@ -237,7 +237,10 @@ class CandidatePatternManager:
             )
 
             if context:
-                pattern.context.update(context)
+                self._refine_context(
+                    pattern,
+                    context,
+                )
 
                 self._update_contextual_characteristics(
                     pattern,
@@ -740,20 +743,90 @@ class CandidatePatternManager:
             sequence_entry
         )
 
+    def _refine_context(
+        self,
+        pattern: CandidatePattern,
+        context: Dict[str, Any],
+    ) -> None:
+        """
+        Incrementally refine contextual understanding.
+
+        The latest contextual value remains directly accessible,
+        while previous contextual observations are preserved in
+        refinement history.
+
+        Existing contextual knowledge is never discarded.
+        """
+
+        if not context:
+            return
+
+        for key, new_value in context.items():
+            history_key = f"{key}__history"
+            count_key = f"{key}__observation_count"
+
+            history = pattern.context.values.setdefault(
+                history_key,
+                [],
+            )
+
+            observation_count = pattern.context.values.get(
+                count_key,
+                0,
+            )
+
+            if not history:
+                history.append(
+                    {
+                        "value": copy.deepcopy(new_value),
+                        "superseded_by": None,
+                    }
+                )
+            else:
+                previous_entry = history[-1]
+
+                if previous_entry["value"] != new_value:
+                    previous_entry["superseded_by"] = (
+                        copy.deepcopy(new_value)
+                    )
+
+                    history.append(
+                        {
+                            "value": copy.deepcopy(new_value),
+                            "superseded_by": None,
+                        }
+                    )
+
+            pattern.context.values[key] = (
+                copy.deepcopy(new_value)
+            )
+
+            pattern.context.values[count_key] = (
+                observation_count + 1
+            )
+
     def _update_contextual_characteristics(
         self,
         pattern: CandidatePattern,
         context: Optional[Dict[str, Any]],
     ) -> None:
         """
-        Incrementally update contextual characteristics from the
-        latest behavioral context.
+        Maintain the latest contextual characteristics.
+
+        Contextual characteristics remain a direct representation
+        of the latest contextual understanding.
+
+        Historical refinement information is maintained separately
+        inside BehavioralContext.
         """
 
         if not context:
             return
 
-        pattern.contextual_characteristics.update(context)
+        for key, value in context.items():
+            pattern.contextual_characteristics[key] = (
+                copy.deepcopy(value)
+            )
 
     def _update_relationship_characteristics(
         self,
