@@ -106,6 +106,11 @@ class CandidatePatternManager:
         return {
             "session_id": pattern.session_id,
             "user_id": pattern.user_id,
+            "session_start_time": pattern.session_start_time,
+            "session_end_time": pattern.session_end_time,
+            "session_duration_seconds": (
+                pattern.session_duration_seconds
+            ),
             "observation_count": pattern.observation_count(),
             "operational_characteristics": copy.deepcopy(
                 pattern.operational_characteristics
@@ -151,6 +156,11 @@ class CandidatePatternManager:
             "complete": metadata.complete,
             "interrupted": metadata.interrupted,
             "finalized_at": metadata.finalized_at,
+            "session_start_time": pattern.session_start_time,
+            "session_end_time": pattern.session_end_time,
+            "session_duration_seconds": (
+                pattern.session_duration_seconds
+            ),
         }
 
     def getEvaluationSnapshot(

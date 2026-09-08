@@ -3337,3 +3337,163 @@ def test_finalize_after_session_completion():
         finalized.metadata.status
         == PatternStatus.COMPLETED
     )
+
+
+def test_behavioral_summary_includes_session_information():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    end_time = datetime(
+        2026, 1, 1, 10, 2, 0
+    )
+
+    manager.createPattern(
+        "session-1",
+        user_id="user-1",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    manager.completeSession(
+        "session-1",
+        end_time,
+    )
+
+    summary = manager.getBehavioralSummary(
+        "session-1"
+    )
+
+    assert summary is not None
+
+    assert (
+        summary["session_start_time"]
+        == start_time
+    )
+
+    assert (
+        summary["session_end_time"]
+        == end_time
+    )
+
+    assert (
+        summary["session_duration_seconds"]
+        == 120.0
+    )
+
+
+def test_pattern_metadata_includes_session_information():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    end_time = datetime(
+        2026, 1, 1, 10, 3, 0
+    )
+
+    manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    manager.completeSession(
+        "session-1",
+        end_time,
+    )
+
+    metadata = manager.getPatternMetadata(
+        "session-1"
+    )
+
+    assert metadata is not None
+
+    assert (
+        metadata["session_start_time"]
+        == start_time
+    )
+
+    assert (
+        metadata["session_end_time"]
+        == end_time
+    )
+
+    assert (
+        metadata["session_duration_seconds"]
+        == 180.0
+    )
+
+
+def test_pattern_snapshot_contains_session_completion_state():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    end_time = datetime(
+        2026, 1, 1, 10, 4, 0
+    )
+
+    manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    manager.completeSession(
+        "session-1",
+        end_time,
+    )
+
+    snapshot = manager.getPatternSnapshot(
+        "session-1"
+    )
+
+    assert snapshot is not None
+
+    assert (
+        snapshot.session_start_time
+        == start_time
+    )
+
+    assert (
+        snapshot.session_end_time
+        == end_time
+    )
+
+    assert (
+        snapshot.session_duration_seconds
+        == 240.0
+    )
