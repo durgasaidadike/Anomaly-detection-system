@@ -7807,3 +7807,536 @@ def test_valid_signal_can_follow_rejected_signal():
         valid_signal,
     ]
     assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_complete_candidate_pattern_invariant_set():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    end_time = datetime(2026, 1, 1, 10, 10, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-001",
+        user_id="user-001",
+        session_start_time=start_time,
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": start_time,
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-final-check-001",
+        first,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    manager.updatePattern(
+        "session-final-check-001",
+        second,
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+    manager.beginEvaluation(
+        "session-final-check-001",
+    )
+
+    assert pattern.metadata.status == PatternStatus.EVALUATING
+
+    manager.resumeLearning(
+        "session-final-check-001",
+    )
+
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+    manager.completeSession(
+        "session-final-check-001",
+        end_time,
+    )
+
+    assert pattern.session_end_time == end_time
+    assert pattern.session_duration_seconds == 600.0
+
+    finalized = manager.finalizePattern(
+        "session-final-check-001",
+    )
+
+    assert finalized is pattern
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
+    assert pattern.observation_count() == 2
+
+    current = manager.getCurrentPattern(
+        "session-final-check-001",
+    )
+
+    assert current is pattern
+
+
+def test_candidate_pattern_preserves_all_behavioral_dimensions_together():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-002",
+        user_id="user-002",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-final-check-002",
+            observation,
+            context={
+                "working_directory": "/project",
+            },
+            relationships=[
+                {
+                    "type": "related_file",
+                    "target": "main.py",
+                }
+            ],
+        )
+
+    assert pattern.observation_count() == 3
+
+    assert (
+        pattern.operational_characteristics[
+            "total_operations"
+        ]
+        == 3
+    )
+
+    assert (
+        pattern.operational_characteristics[
+            "unique_operation_types"
+        ]
+        == 3
+    )
+
+    assert len(
+        pattern.temporal_characteristics[
+            "operation_intervals"
+        ]
+    ) == 2
+
+    assert len(
+        pattern.sequential_characteristics
+    ) == 3
+
+    assert (
+        pattern.context.values[
+            "working_directory"
+        ]
+        == "/project"
+    )
+
+    assert len(
+        pattern.relationship_characteristics
+    ) == 1
+
+    assert (
+        pattern.session_characteristics[
+            "observation_count"
+        ]
+        == 3
+    )
+
+
+def test_rejected_update_preserves_every_behavioral_dimension():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-003",
+    )
+
+    valid = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-final-check-003",
+        valid,
+        context={
+            "working_directory": "/project",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    before = copy.deepcopy(pattern.__dict__)
+
+    invalid = {
+        "event_type": "created",
+        "operation_type": "DELETE",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-final-check-003",
+        invalid,
+        context={
+            "working_directory": "/changed",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "other.py",
+            }
+        ],
+    )
+
+    assert pattern.__dict__ == before
+
+
+def test_read_views_and_finalization_do_not_change_active_behavior():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-004",
+    )
+
+    manager.updatePattern(
+        "session-final-check-004",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    before = copy.deepcopy(pattern.__dict__)
+
+    snapshot = manager.getPatternSnapshot(
+        "session-final-check-004",
+    )
+
+    summary = manager.getBehavioralSummary(
+        "session-final-check-004",
+    )
+
+    metadata = manager.getPatternMetadata(
+        "session-final-check-004",
+    )
+
+    evaluation = manager.getEvaluationSnapshot(
+        "session-final-check-004",
+    )
+
+    assert snapshot is not pattern
+    assert summary is not None
+    assert metadata is not None
+    assert evaluation is not None
+
+    snapshot.timeline.observations.clear()
+    summary["operational_characteristics"][
+        "total_operations"
+    ] = 999
+    metadata["complete"] = True
+    evaluation["candidate_pattern"].timeline.observations.clear()
+
+    assert pattern.__dict__ != {}
+    assert pattern.observation_count() == (
+        before["timeline"].__len__()
+    )
+
+    assert (
+        pattern.operational_characteristics
+        == before["operational_characteristics"]
+    )
+
+    assert (
+        pattern.metadata.complete
+        == before["metadata"].complete
+    )
+
+
+def test_session_isolation_survives_full_lifecycle():
+    manager = CandidatePatternManager()
+
+    session_a = manager.createPattern(
+        session_id="session-final-check-005-a",
+        user_id="user-a",
+    )
+
+    session_b = manager.createPattern(
+        session_id="session-final-check-005-b",
+        user_id="user-b",
+    )
+
+    manager.updatePattern(
+        "session-final-check-005-a",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.updatePattern(
+        "session-final-check-005-b",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.finalizePattern(
+        "session-final-check-005-a",
+    )
+
+    assert session_a.metadata.status == PatternStatus.COMPLETED
+
+    assert session_b.metadata.status == PatternStatus.LEARNING
+    assert session_b.observation_count() == 1
+
+    assert (
+        session_b.timeline.observations[0][
+            "operation_type"
+        ]
+        == "DELETE"
+    )
+
+    assert (
+        manager.getCurrentPattern(
+            "session-final-check-005-b"
+        )
+        is session_b
+    )
+
+
+def test_failed_update_then_successful_update_preserves_lifecycle():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-006",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-final-check-006",
+        first,
+    )
+
+    original_method = (
+        manager._update_session_characteristics
+    )
+
+    def fail_once(pattern, *args, **kwargs):
+        manager._update_session_characteristics = (
+            original_method
+        )
+        raise RuntimeError("one-time failure")
+
+    manager._update_session_characteristics = fail_once
+
+    manager.updatePattern(
+        "session-final-check-006",
+        second,
+    )
+
+    assert pattern.observation_count() == 1
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+    manager.updatePattern(
+        "session-final-check-006",
+        second,
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+    finalized = manager.finalizePattern(
+        "session-final-check-006",
+    )
+
+    assert finalized is pattern
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_finalized_pattern_requires_explicit_reset_for_release():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-007",
+    )
+
+    manager.updatePattern(
+        "session-final-check-007",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.finalizePattern(
+        "session-final-check-007",
+    )
+
+    assert manager.getCurrentPattern(
+        "session-final-check-007"
+    ) is pattern
+
+    released = manager.resetPattern(
+        "session-final-check-007",
+    )
+
+    assert released is pattern
+
+    assert manager.getCurrentPattern(
+        "session-final-check-007"
+    ) is None
+
+
+def test_reset_then_recreate_produces_clean_candidate_pattern():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-final-check-008",
+        user_id="user-old",
+    )
+
+    manager.updatePattern(
+        "session-final-check-008",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "working_directory": "/old",
+        },
+    )
+
+    manager.finalizePattern(
+        "session-final-check-008",
+    )
+
+    manager.resetPattern(
+        "session-final-check-008",
+    )
+
+    second = manager.createPattern(
+        session_id="session-final-check-008",
+        user_id="user-new",
+    )
+
+    assert second is not first
+    assert second.user_id == "user-new"
+    assert second.observation_count() == 0
+    assert second.metadata.status == PatternStatus.INITIALIZING
+    assert second.metadata.complete is False
+    assert second.metadata.interrupted is False
+    assert second.context.values == {}
+    assert second.contextual_characteristics == {}
+    assert second.operational_characteristics == {}
+    assert second.temporal_characteristics == {}
+    assert second.sequential_characteristics == []
+    assert second.relationship_characteristics == []
+    assert second.session_characteristics == {}
+
+
+def test_candidate_pattern_cannot_produce_final_pattern_without_behavior():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-009",
+    )
+
+    evaluation = manager.getEvaluationSnapshot(
+        "session-final-check-009",
+    )
+
+    assert evaluation is not None
+    assert evaluation["candidate_pattern"] is not pattern
+
+    result = manager.finalizePattern(
+        "session-final-check-009",
+    )
+
+    assert result is None
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_interrupted_candidate_remains_frozen_until_reset():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-check-010",
+    )
+
+    manager.updatePattern(
+        "session-final-check-010",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.freezePattern(
+        "session-final-check-010",
+    )
+
+    before = copy.deepcopy(pattern.__dict__)
+
+    manager.updatePattern(
+        "session-final-check-010",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    manager.beginEvaluation(
+        "session-final-check-010",
+    )
+
+    manager.completeSession(
+        "session-final-check-010",
+        datetime(2026, 1, 1, 11, 0, 0),
+    )
+
+    assert pattern.__dict__ == before
+    assert pattern.metadata.interrupted is True
+    assert pattern.metadata.complete is False
