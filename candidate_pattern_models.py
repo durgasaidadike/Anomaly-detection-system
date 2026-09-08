@@ -104,6 +104,8 @@ class CandidatePattern:
     session_id: str
     user_id: Optional[str] = None
     session_start_time: Optional[datetime] = None
+    session_end_time: Optional[datetime] = None
+    session_duration_seconds: Optional[float] = None
 
     timeline: BehavioralTimeline = field(
         default_factory=BehavioralTimeline

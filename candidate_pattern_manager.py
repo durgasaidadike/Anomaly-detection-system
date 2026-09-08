@@ -292,6 +292,67 @@ class CandidatePatternManager:
         except Exception:
             return pattern
 
+    def completeSession(
+        self,
+        session_id: str,
+        session_end_time: Optional[datetime] = None,
+    ) -> Optional[CandidatePattern]:
+        """
+        Mark the active session as completed and record its
+        end time and duration.
+
+        This method records session completion but does not
+        persist or hand off the Final Pattern by itself.
+        """
+
+        pattern = self.getCurrentPattern(session_id)
+
+        if pattern is None:
+            return None
+
+        if pattern.metadata.interrupted:
+            return pattern
+
+        if pattern.metadata.status == PatternStatus.COMPLETED:
+            return pattern
+
+        if session_end_time is None:
+            session_end_time = datetime.now()
+
+        if (
+            pattern.session_start_time is not None
+            and session_end_time < pattern.session_start_time
+        ):
+            return pattern
+
+        pattern.session_end_time = session_end_time
+
+        if pattern.session_start_time is not None:
+            pattern.session_duration_seconds = (
+                session_end_time
+                - pattern.session_start_time
+            ).total_seconds()
+        else:
+            pattern.session_duration_seconds = 0.0
+
+        pattern.temporal_characteristics[
+            "session_end_time"
+        ] = session_end_time
+
+        pattern.temporal_characteristics[
+            "session_duration_seconds"
+        ] = pattern.session_duration_seconds
+
+        pattern.session_characteristics[
+            "session_end_time"
+        ] = session_end_time
+
+        pattern.session_characteristics[
+            "session_length_seconds"
+        ] = pattern.session_duration_seconds
+
+        return pattern
+
     def finalizePattern(
         self,
         session_id: str,
@@ -299,9 +360,10 @@ class CandidatePatternManager:
         """
         Finalize the active Candidate Pattern.
 
-        Finalization converts the evolving Candidate Pattern into a
-        completed immutable state. Persistence and repository handoff
-        are intentionally outside this operation.
+        If the session has not already been explicitly completed,
+        finalization records the current time as the session end.
+
+        Empty or interrupted sessions cannot produce Final Patterns.
         """
 
         pattern = self.getCurrentPattern(session_id)
@@ -321,8 +383,24 @@ class CandidatePatternManager:
         previous_status = pattern.metadata.status
         previous_complete = pattern.metadata.complete
         previous_finalized_at = pattern.metadata.finalized_at
+        previous_session_end = pattern.session_end_time
+        previous_session_duration = (
+            pattern.session_duration_seconds
+        )
+        previous_temporal = copy.deepcopy(
+            pattern.temporal_characteristics
+        )
+        previous_session_characteristics = copy.deepcopy(
+            pattern.session_characteristics
+        )
 
         try:
+            if pattern.session_end_time is None:
+                self.completeSession(session_id)
+
+            if pattern.session_end_time is None:
+                return pattern
+
             pattern.metadata.status = PatternStatus.FINALIZING
 
             pattern.mark_finalized()
@@ -338,6 +416,20 @@ class CandidatePatternManager:
             pattern.metadata.status = previous_status
             pattern.metadata.complete = previous_complete
             pattern.metadata.finalized_at = previous_finalized_at
+            pattern.session_end_time = previous_session_end
+            pattern.session_duration_seconds = (
+                previous_session_duration
+            )
+
+            pattern.temporal_characteristics.clear()
+            pattern.temporal_characteristics.update(
+                previous_temporal
+            )
+
+            pattern.session_characteristics.clear()
+            pattern.session_characteristics.update(
+                previous_session_characteristics
+            )
 
             return pattern
 

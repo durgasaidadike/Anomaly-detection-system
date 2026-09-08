@@ -3175,3 +3175,165 @@ def test_context_refinement_rolls_back_without_losing_history():
         pattern.contextual_characteristics
         == original_contextual
     )
+
+
+def test_complete_session_records_end_time_and_duration():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    end_time = datetime(
+        2026, 1, 1, 10, 5, 30
+    )
+
+    pattern = manager.createPattern(
+        "session-1",
+        user_id="user-1",
+        session_start_time=start_time,
+    )
+
+    completed = manager.completeSession(
+        "session-1",
+        end_time,
+    )
+
+    assert completed is pattern
+
+    assert (
+        pattern.session_end_time
+        == end_time
+    )
+
+    assert (
+        pattern.session_duration_seconds
+        == 330.0
+    )
+
+    assert (
+        pattern.temporal_characteristics[
+            "session_end_time"
+        ]
+        == end_time
+    )
+
+    assert (
+        pattern.session_characteristics[
+            "session_length_seconds"
+        ]
+        == 330.0
+    )
+
+
+def test_finalize_pattern_auto_completes_session():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    finalized = manager.finalizePattern(
+        "session-1"
+    )
+
+    assert finalized is not None
+    assert finalized.session_end_time is not None
+    assert finalized.session_duration_seconds is not None
+    assert finalized.metadata.status == PatternStatus.COMPLETED
+
+
+def test_complete_session_rejects_end_before_session_start():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    invalid_end_time = datetime(
+        2026, 1, 1, 9, 59, 59
+    )
+
+    pattern = manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
+
+    completed = manager.completeSession(
+        "session-1",
+        invalid_end_time,
+    )
+
+    assert completed is pattern
+
+    assert pattern.session_end_time is None
+
+    assert (
+        pattern.session_duration_seconds
+        is None
+    )
+
+
+def test_finalize_after_session_completion():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026, 1, 1, 10, 0, 0
+    )
+
+    end_time = datetime(
+        2026, 1, 1, 10, 1, 0
+    )
+
+    manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-1",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    manager.completeSession(
+        "session-1",
+        end_time,
+    )
+
+    finalized = manager.finalizePattern(
+        "session-1"
+    )
+
+    assert finalized is not None
+
+    assert finalized.session_end_time == end_time
+
+    assert (
+        finalized.session_duration_seconds
+        == 60.0
+    )
+
+    assert (
+        finalized.metadata.status
+        == PatternStatus.COMPLETED
+    )
