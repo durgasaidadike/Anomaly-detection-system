@@ -5573,3 +5573,400 @@ def test_candidate_pattern_growth_preserves_previous_knowledge():
     assert len(
         pattern.sequential_characteristics
     ) == 2
+
+
+def test_final_pattern_handler_receives_completed_candidate():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-final-001",
+        user_id="user-001",
+        session_start_time=start_time,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": start_time,
+    }
+
+    manager.updatePattern(
+        "session-final-001",
+        observation,
+    )
+
+    finalized = manager.finalizePattern(
+        "session-final-001",
+    )
+
+    assert finalized is pattern
+    assert len(received) == 1
+
+    handed_off = received[0]
+
+    assert handed_off is pattern
+    assert handed_off.metadata.status == PatternStatus.COMPLETED
+    assert handed_off.metadata.complete is True
+    assert handed_off.observation_count() == 1
+
+
+def test_finalization_records_session_end_before_handoff():
+    received = []
+
+    def handler(pattern):
+        received.append(
+            {
+                "session_end_time": pattern.session_end_time,
+                "duration": pattern.session_duration_seconds,
+                "status": pattern.metadata.status,
+            }
+        )
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-final-002",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-final-002",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": start_time,
+        },
+    )
+
+    explicit_end = datetime(2026, 1, 1, 10, 30, 0)
+
+    manager.completeSession(
+        "session-final-002",
+        explicit_end,
+    )
+
+    manager.finalizePattern(
+        "session-final-002",
+    )
+
+    assert len(received) == 1
+
+    assert received[0]["session_end_time"] == explicit_end
+    assert received[0]["duration"] == 1800.0
+    assert received[0]["status"] == PatternStatus.COMPLETED
+
+    assert pattern.session_end_time == explicit_end
+    assert pattern.session_duration_seconds == 1800.0
+
+
+def test_empty_candidate_pattern_never_reaches_handler():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern(
+        session_id="session-final-003",
+    )
+
+    result = manager.finalizePattern(
+        "session-final-003",
+    )
+
+    assert result is None
+    assert received == []
+
+
+def test_interrupted_candidate_pattern_never_reaches_handler():
+    received = []
+
+    def handler(pattern):
+        received.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    manager.createPattern(
+        session_id="session-final-004",
+    )
+
+    manager.updatePattern(
+        "session-final-004",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.freezePattern(
+        "session-final-004",
+    )
+
+    result = manager.finalizePattern(
+        "session-final-004",
+    )
+
+    assert result is None
+    assert received == []
+
+
+def test_handler_returning_false_does_not_corrupt_completed_pattern():
+    calls = []
+
+    def handler(pattern):
+        calls.append(pattern)
+        return False
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    pattern = manager.createPattern(
+        session_id="session-final-005",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-final-005",
+        observation,
+    )
+
+    result = manager.finalizePattern(
+        "session-final-005",
+    )
+
+    assert result is pattern
+    assert len(calls) == 1
+
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
+    assert pattern.observation_count() == 1
+
+
+def test_handler_exception_does_not_corrupt_preexisting_behavior():
+    def handler(pattern):
+        raise RuntimeError("handoff failure")
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-final-006",
+        session_start_time=start_time,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": start_time,
+    }
+
+    manager.updatePattern(
+        "session-final-006",
+        observation,
+    )
+
+    original_observations = copy.deepcopy(
+        pattern.timeline.observations
+    )
+    original_operational = copy.deepcopy(
+        pattern.operational_characteristics
+    )
+
+    result = manager.finalizePattern(
+        "session-final-006",
+    )
+
+    assert result is pattern
+
+    assert pattern.timeline.observations == (
+        original_observations
+    )
+
+    assert (
+        pattern.operational_characteristics
+        == original_operational
+    )
+
+    assert pattern.observation_count() == 1
+
+
+def test_handoff_failure_does_not_remove_active_pattern():
+    def handler(pattern):
+        return False
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    pattern = manager.createPattern(
+        session_id="session-final-007",
+    )
+
+    manager.updatePattern(
+        "session-final-007",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    result = manager.finalizePattern(
+        "session-final-007",
+    )
+
+    current = manager.getCurrentPattern(
+        "session-final-007",
+    )
+
+    assert result is pattern
+    assert current is pattern
+    assert current.metadata.status == PatternStatus.COMPLETED
+    assert current.observation_count() == 1
+
+
+def test_explicit_session_completion_is_preserved_during_finalization():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 8, 0, 0)
+    end_time = datetime(2026, 1, 1, 9, 15, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-final-008",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-final-008",
+        {
+            "operation_type": "CREATE",
+            "timestamp": start_time,
+        },
+    )
+
+    manager.completeSession(
+        "session-final-008",
+        end_time,
+    )
+
+    manager.finalizePattern(
+        "session-final-008",
+    )
+
+    assert pattern.session_end_time == end_time
+    assert pattern.session_duration_seconds == 4500.0
+
+    assert (
+        pattern.temporal_characteristics[
+            "session_end_time"
+        ]
+        == end_time
+    )
+
+    assert (
+        pattern.session_characteristics[
+            "session_length_seconds"
+        ]
+        == 4500.0
+    )
+
+
+def test_finalization_is_idempotent_after_completion():
+    calls = []
+
+    def handler(pattern):
+        calls.append(pattern)
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    pattern = manager.createPattern(
+        session_id="session-final-009",
+    )
+
+    manager.updatePattern(
+        "session-final-009",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    first = manager.finalizePattern(
+        "session-final-009",
+    )
+
+    finalized_at = pattern.metadata.finalized_at
+
+    second = manager.finalizePattern(
+        "session-final-009",
+    )
+
+    assert first is pattern
+    assert second is pattern
+
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.finalized_at == finalized_at
+
+    assert len(calls) == 1
+
+
+def test_finalization_keeps_finalized_pattern_available_until_reset():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-final-010",
+    )
+
+    manager.updatePattern(
+        "session-final-010",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    finalized = manager.finalizePattern(
+        "session-final-010",
+    )
+
+    assert finalized is pattern
+
+    current = manager.getCurrentPattern(
+        "session-final-010",
+    )
+
+    assert current is pattern
+    assert current.metadata.status == PatternStatus.COMPLETED
+
+    removed = manager.resetPattern(
+        "session-final-010",
+    )
+
+    assert removed is pattern
+    assert manager.getCurrentPattern(
+        "session-final-010"
+    ) is None
