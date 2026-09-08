@@ -7429,3 +7429,381 @@ def test_recreated_session_starts_without_previous_observation_count():
     assert new_pattern.observation_count() == 0
     assert new_pattern.timeline.observations == []
     assert new_pattern.metadata.observation_count == 0
+
+
+@pytest.mark.parametrize(
+    "invalid_session_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        0,
+        [],
+        {},
+    ],
+)
+def test_create_pattern_rejects_invalid_session_id(
+    invalid_session_id,
+):
+    manager = CandidatePatternManager()
+
+    with pytest.raises(ValueError):
+        manager.createPattern(
+            session_id=invalid_session_id,
+        )
+
+
+@pytest.mark.parametrize(
+    "invalid_session_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        0,
+        [],
+        {},
+    ],
+)
+def test_get_current_pattern_handles_invalid_session_id(
+    invalid_session_id,
+):
+    manager = CandidatePatternManager()
+
+    assert manager.getCurrentPattern(
+        invalid_session_id
+    ) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_session_id",
+    [
+        None,
+        "",
+        " ",
+        123,
+        0,
+        [],
+        {},
+    ],
+)
+def test_update_pattern_handles_invalid_session_id(
+    invalid_session_id,
+):
+    manager = CandidatePatternManager()
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    assert manager.updatePattern(
+        invalid_session_id,
+        observation,
+    ) is None
+
+
+def test_whitespace_around_valid_session_id_is_preserved():
+    manager = CandidatePatternManager()
+
+    session_id = "  session-contract-001  "
+
+    pattern = manager.createPattern(
+        session_id=session_id,
+    )
+
+    assert pattern.session_id == session_id
+    assert manager.getCurrentPattern(
+        session_id
+    ) is pattern
+
+
+def test_session_identity_is_not_silently_normalized():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-contract-002",
+    )
+
+    second = manager.createPattern(
+        session_id=" session-contract-002",
+    )
+
+    assert first is not second
+    assert first.session_id == "session-contract-002"
+    assert second.session_id == " session-contract-002"
+
+
+def test_empty_behavioral_signal_does_not_create_pattern_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-003",
+    )
+
+    result = manager.updatePattern(
+        "session-contract-003",
+        {},
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.metadata.observation_count == 0
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_signal_without_timestamp_does_not_change_pattern_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-004",
+    )
+
+    invalid_signal = {
+        "operation_type": "CREATE",
+    }
+
+    result = manager.updatePattern(
+        "session-contract-004",
+        invalid_signal,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.operational_characteristics == {}
+    assert pattern.temporal_characteristics == {}
+    assert pattern.sequential_characteristics == []
+    assert pattern.session_characteristics == {}
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_non_dict_context_does_not_corrupt_update():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-005",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-contract-005",
+        observation,
+        context="invalid-context",
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.timeline.observations == []
+    assert pattern.context.values == {}
+    assert pattern.contextual_characteristics == {}
+    assert pattern.operational_characteristics == {}
+    assert pattern.temporal_characteristics == {}
+    assert pattern.sequential_characteristics == []
+    assert pattern.session_characteristics == {}
+    assert pattern.metadata.observation_count == 0
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_empty_context_is_safe():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-006",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-contract-006",
+        observation,
+        context={},
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.context.values == {}
+
+
+def test_non_list_relationships_do_not_corrupt_update():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-007",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-contract-007",
+        observation,
+        relationships="invalid-relationships",
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.relationship_characteristics == []
+
+
+def test_empty_relationship_list_is_safe():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-008",
+    )
+
+    observation = {
+        "operation_type": "DELETE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-contract-008",
+        observation,
+        relationships=[],
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.relationship_characteristics == []
+
+
+def test_valid_signal_with_only_timestamp_is_accepted():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-009",
+    )
+
+    observation = {
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "signal": "behavior-observed",
+    }
+
+    result = manager.updatePattern(
+        "session-contract-009",
+        observation,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_valid_signal_without_operation_type_does_not_break_operational_metrics():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-010",
+    )
+
+    observation = {
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "behavior": "activity-detected",
+    }
+
+    manager.updatePattern(
+        "session-contract-010",
+        observation,
+    )
+
+    operational = pattern.operational_characteristics
+
+    assert operational["total_operations"] == 1
+    assert operational["operation_counts"] == {}
+    assert operational["unique_operation_types"] == 0
+
+
+def test_raw_event_marker_takes_precedence_over_other_valid_fields():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-011",
+    )
+
+    raw_event = {
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "signal": "behavior-observed",
+        "operation_type": "CREATE",
+        "raw_event": {
+            "event": "created",
+        },
+    }
+
+    result = manager.updatePattern(
+        "session-contract-011",
+        raw_event,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 0
+    assert pattern.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_valid_session_remains_accessible_after_rejected_signal():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-012",
+    )
+
+    invalid_signal = {
+        "event_type": "created",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-contract-012",
+        invalid_signal,
+    )
+
+    current = manager.getCurrentPattern(
+        "session-contract-012",
+    )
+
+    assert current is pattern
+    assert current.observation_count() == 0
+    assert current.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_valid_signal_can_follow_rejected_signal():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-contract-013",
+    )
+
+    manager.updatePattern(
+        "session-contract-013",
+        {
+            "event_type": "created",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    valid_signal = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    result = manager.updatePattern(
+        "session-contract-013",
+        valid_signal,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [
+        valid_signal,
+    ]
+    assert pattern.metadata.status == PatternStatus.LEARNING
