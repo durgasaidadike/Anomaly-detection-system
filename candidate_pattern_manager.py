@@ -456,33 +456,77 @@ class CandidatePatternManager:
         observation: Dict[str, Any],
     ) -> None:
         """
-        Incrementally update operational characteristics from an
-        interpreted behavioral observation.
+        Incrementally maintain operational characteristics.
+
+        Tracks:
+        - total operations
+        - operation counts
+        - operation frequencies
+        - operation distribution
+        - unique operation types
+
+        Existing behavioral knowledge is retained and only
+        extended/refined by each accepted observation.
         """
 
         operation_type = observation.get("operation_type")
 
         characteristics = pattern.operational_characteristics
 
-        total_operations = characteristics.get(
-            "total_operations",
-            0,
+        total_operations = (
+            characteristics.get(
+                "total_operations",
+                0,
+            )
+            + 1
         )
 
-        characteristics["total_operations"] = total_operations + 1
+        characteristics["total_operations"] = (
+            total_operations
+        )
 
         operation_counts = characteristics.setdefault(
             "operation_counts",
             {},
         )
 
-        if operation_type is not None:
-            operation_counts[operation_type] = (
-                operation_counts.get(operation_type, 0) + 1
+        if operation_type is None:
+            characteristics["unique_operation_types"] = len(
+                operation_counts
             )
+            return
+
+        operation_type = str(operation_type)
+
+        operation_counts[operation_type] = (
+            operation_counts.get(
+                operation_type,
+                0,
+            )
+            + 1
+        )
 
         characteristics["unique_operation_types"] = len(
             operation_counts
+        )
+
+        # Frequency represents the number of occurrences
+        # of every operation type.
+        characteristics["operation_frequency"] = (
+            dict(operation_counts)
+        )
+
+        # Distribution represents the normalized proportion
+        # of every operation type within the session so far.
+        operation_distribution = {}
+
+        for current_operation, count in operation_counts.items():
+            operation_distribution[current_operation] = (
+                count / total_operations
+            )
+
+        characteristics["operation_distribution"] = (
+            operation_distribution
         )
 
     def _update_temporal_characteristics(

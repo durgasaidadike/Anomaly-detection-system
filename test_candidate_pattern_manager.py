@@ -2707,3 +2707,215 @@ def test_session_characteristics_track_density_and_complexity():
         ["operation_diversity"]
         == 2
     )
+
+
+def test_operation_frequency_tracks_accumulated_counts():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 1),
+        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 3),
+    ]
+
+    operations = [
+        "CREATE",
+        "CREATE",
+        "MODIFY",
+        "DELETE",
+    ]
+
+    for operation, timestamp in zip(
+        operations,
+        timestamps,
+    ):
+        manager.updatePattern(
+            "session-001",
+            {
+                "operation_type": operation,
+                "timestamp": timestamp,
+            },
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = (
+        pattern.operational_characteristics
+    )
+
+    assert characteristics["operation_frequency"] == {
+        "CREATE": 2,
+        "MODIFY": 1,
+        "DELETE": 1,
+    }
+
+
+def test_operation_distribution_is_normalized():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 2
+            ),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 3
+            ),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-001",
+            observation,
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    distribution = (
+        pattern.operational_characteristics[
+            "operation_distribution"
+        ]
+    )
+
+    assert distribution["CREATE"] == 0.5
+    assert distribution["MODIFY"] == 0.25
+    assert distribution["DELETE"] == 0.25
+
+    assert sum(distribution.values()) == 1.0
+
+
+def test_operation_distribution_evolves_with_new_behavior():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    first_distribution = (
+        pattern.operational_characteristics[
+            "operation_distribution"
+        ].copy()
+    )
+
+    assert first_distribution == {
+        "CREATE": 1.0
+    }
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 1
+            ),
+        },
+    )
+
+    second_distribution = (
+        pattern.operational_characteristics[
+            "operation_distribution"
+        ]
+    )
+
+    assert second_distribution == {
+        "CREATE": 0.5,
+        "MODIFY": 0.5,
+    }
+
+    assert "CREATE" in second_distribution
+    assert "MODIFY" in second_distribution
+
+
+def test_duplicate_observation_does_not_change_operation_distribution():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(
+            2026, 1, 1, 10, 0, 0
+        ),
+    }
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    manager.updatePattern(
+        "session-001",
+        observation,
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = (
+        pattern.operational_characteristics
+    )
+
+    assert characteristics["total_operations"] == 1
+
+    assert characteristics["operation_frequency"] == {
+        "CREATE": 1,
+    }
+
+    assert characteristics["operation_distribution"] == {
+        "CREATE": 1.0,
+    }
