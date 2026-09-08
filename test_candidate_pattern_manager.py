@@ -5057,3 +5057,519 @@ def test_duplicate_signal_after_other_observations_is_still_ignored():
         first,
         second,
     ]
+
+
+def test_operational_characteristics_accumulate_incrementally():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-001",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-growth-001",
+            observation,
+        )
+
+    operational = pattern.operational_characteristics
+
+    assert operational["total_operations"] == 4
+    assert operational["operation_counts"] == {
+        "CREATE": 1,
+        "MODIFY": 2,
+        "DELETE": 1,
+    }
+    assert operational["unique_operation_types"] == 3
+
+
+def test_operation_distribution_refines_with_new_observations():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-002",
+    )
+
+    manager.updatePattern(
+        "session-growth-002",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    distribution_after_first = copy.deepcopy(
+        pattern.operational_characteristics[
+            "operation_distribution"
+        ]
+    )
+
+    manager.updatePattern(
+        "session-growth-002",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    distribution_after_second = (
+        pattern.operational_characteristics[
+            "operation_distribution"
+        ]
+    )
+
+    assert distribution_after_first == {
+        "CREATE": 1.0,
+    }
+
+    assert distribution_after_second == {
+        "CREATE": 0.5,
+        "MODIFY": 0.5,
+    }
+
+    assert distribution_after_second != (
+        distribution_after_first
+    )
+
+
+def test_temporal_characteristics_grow_with_observations():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-003",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-growth-003",
+            observation,
+        )
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["first_observation_time"] == (
+        datetime(2026, 1, 1, 10, 0, 0)
+    )
+
+    assert temporal["last_observation_time"] == (
+        datetime(2026, 1, 1, 10, 3, 0)
+    )
+
+    assert temporal["time_between_operations"] == [
+        60.0,
+        120.0,
+    ]
+
+    assert temporal["working_rhythm"][
+        "observation_count"
+    ] == 3
+
+
+def test_sequential_characteristics_preserve_behavioral_order():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-004",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-growth-004",
+            observation,
+        )
+
+    sequence = pattern.sequential_characteristics
+
+    assert [
+        item["operation_type"]
+        for item in sequence
+    ] == [
+        "CREATE",
+        "MODIFY",
+        "MODIFY",
+        "DELETE",
+    ]
+
+    assert [
+        item["timestamp"]
+        for item in sequence
+    ] == [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 3, 0),
+    ]
+
+
+def test_context_refinement_preserves_latest_and_history():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-005",
+    )
+
+    manager.updatePattern(
+        "session-growth-005",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "working_directory": "/project-a",
+        },
+    )
+
+    manager.updatePattern(
+        "session-growth-005",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        context={
+            "working_directory": "/project-b",
+        },
+    )
+
+    manager.updatePattern(
+        "session-growth-005",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+        },
+        context={
+            "working_directory": "/project-c",
+        },
+    )
+
+    values = pattern.context.values
+
+    assert values["working_directory"] == "/project-c"
+    assert values["working_directory__observation_count"] == 3
+
+    history = values["working_directory__history"]
+
+    assert history == [
+        {
+            "value": "/project-a",
+            "superseded_by": "/project-b",
+        },
+        {
+            "value": "/project-b",
+            "superseded_by": "/project-c",
+        },
+        {
+            "value": "/project-c",
+            "superseded_by": None,
+        },
+    ]
+
+
+def test_context_observation_count_refines_without_replacing_history():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-006",
+    )
+
+    timestamp = datetime(2026, 1, 1, 10, 0, 0)
+
+    manager.updatePattern(
+        "session-growth-006",
+        {
+            "operation_type": "CREATE",
+            "timestamp": timestamp,
+        },
+        context={
+            "environment": "development",
+        },
+    )
+
+    manager.updatePattern(
+        "session-growth-006",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        context={
+            "environment": "development",
+        },
+    )
+
+    history = pattern.context.values[
+        "environment__history"
+    ]
+
+    assert pattern.context.values[
+        "environment"
+    ] == "development"
+
+    assert pattern.context.values[
+        "environment__observation_count"
+    ] == 2
+
+    assert history == [
+        {
+            "value": "development",
+            "superseded_by": None,
+        }
+    ]
+
+
+def test_relationship_characteristics_accumulate_without_duplicate_relationships():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-007",
+    )
+
+    relationship = {
+        "type": "related_file",
+        "target": "important.txt",
+    }
+
+    manager.updatePattern(
+        "session-growth-007",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        relationships=[relationship],
+    )
+
+    manager.updatePattern(
+        "session-growth-007",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+        relationships=[relationship],
+    )
+
+    assert pattern.relationship_characteristics == [
+        relationship,
+    ]
+
+
+def test_multiple_relationships_are_preserved_in_observation_order():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-008",
+    )
+
+    first_relationship = {
+        "type": "related_file",
+        "target": "first.txt",
+    }
+
+    second_relationship = {
+        "type": "related_file",
+        "target": "second.txt",
+    }
+
+    manager.updatePattern(
+        "session-growth-008",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        relationships=[
+            first_relationship,
+            second_relationship,
+        ],
+    )
+
+    assert pattern.relationship_characteristics == [
+        first_relationship,
+        second_relationship,
+    ]
+
+
+def test_session_characteristics_refine_as_pattern_grows():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-009",
+        user_id="user-009",
+    )
+
+    manager.updatePattern(
+        "session-growth-009",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    first_session_state = copy.deepcopy(
+        pattern.session_characteristics
+    )
+
+    manager.updatePattern(
+        "session-growth-009",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        },
+    )
+
+    second_session_state = (
+        pattern.session_characteristics
+    )
+
+    assert first_session_state[
+        "observation_count"
+    ] == 1
+
+    assert second_session_state[
+        "observation_count"
+    ] == 2
+
+    assert second_session_state[
+        "operation_diversity"
+    ] == 2
+
+    assert second_session_state[
+        "session_id"
+    ] == "session-growth-009"
+
+    assert second_session_state[
+        "user_id"
+    ] == "user-009"
+
+
+def test_candidate_pattern_growth_preserves_previous_knowledge():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-growth-010",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+    }
+
+    manager.updatePattern(
+        "session-growth-010",
+        first,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    knowledge_after_first = {
+        "observations": copy.deepcopy(
+            pattern.timeline.observations
+        ),
+        "operational": copy.deepcopy(
+            pattern.operational_characteristics
+        ),
+        "temporal": copy.deepcopy(
+            pattern.temporal_characteristics
+        ),
+        "sequence": copy.deepcopy(
+            pattern.sequential_characteristics
+        ),
+        "context": copy.deepcopy(
+            pattern.context.values
+        ),
+        "session": copy.deepcopy(
+            pattern.session_characteristics
+        ),
+    }
+
+    manager.updatePattern(
+        "session-growth-010",
+        second,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    assert pattern.timeline.observations[0] == first
+
+    assert (
+        pattern.operational_characteristics[
+            "operation_counts"
+        ]["CREATE"]
+        == 1
+    )
+
+    assert (
+        pattern.temporal_characteristics[
+            "first_observation_time"
+        ]
+        == knowledge_after_first["temporal"][
+            "first_observation_time"
+        ]
+    )
+
+    assert (
+        pattern.context.values[
+            "working_directory"
+        ]
+        == "/project"
+    )
+
+    assert len(
+        pattern.sequential_characteristics
+    ) == 2
