@@ -3776,3 +3776,198 @@ def test_completed_pattern_cannot_begin_evaluation():
         pattern.metadata.status
         == PatternStatus.COMPLETED
     )
+
+
+def test_candidate_patterns_are_isolated_between_sessions():
+    manager = CandidatePatternManager()
+
+    pattern_a = manager.createPattern(
+        "session-a",
+        user_id="user-a",
+    )
+
+    pattern_b = manager.createPattern(
+        "session-b",
+        user_id="user-b",
+    )
+
+    manager.updatePattern(
+        "session-a",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+        context={
+            "directory": "/project-a",
+        },
+    )
+
+    manager.updatePattern(
+        "session-b",
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(
+                2026, 1, 1, 11, 0, 0
+            ),
+        },
+        context={
+            "directory": "/project-b",
+        },
+    )
+
+    assert pattern_a is not pattern_b
+
+    assert pattern_a.session_id == "session-a"
+    assert pattern_b.session_id == "session-b"
+
+    assert pattern_a.user_id == "user-a"
+    assert pattern_b.user_id == "user-b"
+
+    assert pattern_a.observation_count() == 1
+    assert pattern_b.observation_count() == 1
+
+    assert (
+        pattern_a.operational_characteristics[
+            "operation_counts"
+        ]["CREATE"]
+        == 1
+    )
+
+    assert (
+        pattern_b.operational_characteristics[
+            "operation_counts"
+        ]["DELETE"]
+        == 1
+    )
+
+    assert (
+        pattern_a.contextual_characteristics[
+            "directory"
+        ]
+        == "/project-a"
+    )
+
+    assert (
+        pattern_b.contextual_characteristics[
+            "directory"
+        ]
+        == "/project-b"
+    )
+
+
+def test_session_lookup_returns_only_its_own_candidate_pattern():
+    manager = CandidatePatternManager()
+
+    pattern_a = manager.createPattern(
+        "session-a",
+    )
+
+    pattern_b = manager.createPattern(
+        "session-b",
+    )
+
+    assert (
+        manager.getCurrentPattern("session-a")
+        is pattern_a
+    )
+
+    assert (
+        manager.getCurrentPattern("session-b")
+        is pattern_b
+    )
+
+    assert (
+        manager.getCurrentPattern("session-a")
+        is not pattern_b
+    )
+
+    assert (
+        manager.getCurrentPattern("session-b")
+        is not pattern_a
+    )
+
+
+def test_reset_is_isolated_to_one_session():
+    manager = CandidatePatternManager()
+
+    pattern_a = manager.createPattern(
+        "session-a",
+    )
+
+    pattern_b = manager.createPattern(
+        "session-b",
+    )
+
+    removed = manager.resetPattern(
+        "session-a",
+    )
+
+    assert removed is pattern_a
+
+    assert (
+        manager.getCurrentPattern("session-a")
+        is None
+    )
+
+    assert (
+        manager.getCurrentPattern("session-b")
+        is pattern_b
+    )
+
+
+def test_finalization_is_isolated_between_sessions():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        "session-a",
+    )
+
+    manager.createPattern(
+        "session-b",
+    )
+
+    manager.updatePattern(
+        "session-a",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.updatePattern(
+        "session-b",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 11, 0, 0
+            ),
+        },
+    )
+
+    finalized = manager.finalizePattern(
+        "session-a",
+    )
+
+    assert finalized is not None
+
+    assert (
+        finalized.metadata.status
+        == PatternStatus.COMPLETED
+    )
+
+    other = manager.getCurrentPattern(
+        "session-b",
+    )
+
+    assert other is not None
+
+    assert (
+        other.metadata.status
+        != PatternStatus.COMPLETED
+    )
+
+    assert other.observation_count() == 1
