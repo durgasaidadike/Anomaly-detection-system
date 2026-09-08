@@ -4377,3 +4377,299 @@ def test_freeze_preserves_latest_valid_state_after_evaluation():
     ]
     assert pattern.metadata.interrupted is True
     assert pattern.metadata.complete is False
+
+
+def test_pattern_snapshot_is_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-001",
+        user_id="user-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-001",
+        observation,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    snapshot = manager.getPatternSnapshot(
+        "session-readonly-001",
+    )
+
+    assert snapshot is not None
+    assert snapshot is not pattern
+
+    snapshot.timeline.observations.append(
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime.now(),
+        }
+    )
+
+    snapshot.context.values["working_directory"] = (
+        "/modified"
+    )
+
+    assert pattern.observation_count() == 1
+    assert (
+        pattern.context.values["working_directory"]
+        == "/project"
+    )
+
+
+def test_behavioral_summary_is_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-002",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-002",
+        observation,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    summary = manager.getBehavioralSummary(
+        "session-readonly-002",
+    )
+
+    assert summary is not None
+
+    summary["operational_characteristics"][
+        "total_operations"
+    ] = 999
+
+    summary["contextual_characteristics"][
+        "working_directory"
+    ] = "/modified"
+
+    assert (
+        pattern.operational_characteristics[
+            "total_operations"
+        ]
+        == 1
+    )
+
+    assert (
+        pattern.contextual_characteristics[
+            "working_directory"
+        ]
+        == "/project"
+    )
+
+
+def test_behavioral_summary_nested_data_is_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-003",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-003",
+        first,
+    )
+
+    manager.updatePattern(
+        "session-readonly-003",
+        second,
+    )
+
+    summary = manager.getBehavioralSummary(
+        "session-readonly-003",
+    )
+
+    assert summary is not None
+
+    summary["sequential_characteristics"].clear()
+
+    summary["temporal_characteristics"][
+        "time_between_operations"
+    ].clear()
+
+    assert len(pattern.sequential_characteristics) == 2
+    assert len(
+        pattern.temporal_characteristics[
+            "time_between_operations"
+        ]
+    ) == 1
+
+
+def test_pattern_metadata_is_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-004",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-004",
+        observation,
+    )
+
+    metadata = manager.getPatternMetadata(
+        "session-readonly-004",
+    )
+
+    assert metadata is not None
+
+    metadata["observation_count"] = 999
+    metadata["complete"] = True
+    metadata["interrupted"] = True
+    metadata["status"] = PatternStatus.COMPLETED
+
+    assert pattern.metadata.observation_count == 1
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.interrupted is False
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_evaluation_snapshot_is_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-005",
+        user_id="user-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-005",
+        observation,
+        context={
+            "working_directory": "/project",
+        },
+    )
+
+    evaluation = manager.getEvaluationSnapshot(
+        "session-readonly-005",
+    )
+
+    assert evaluation is not None
+
+    candidate_snapshot = evaluation[
+        "candidate_pattern"
+    ]
+
+    behavioral_summary = evaluation[
+        "behavioral_summary"
+    ]
+
+    pattern_metadata = evaluation[
+        "pattern_metadata"
+    ]
+
+    assert candidate_snapshot is not pattern
+    assert behavioral_summary is not None
+    assert pattern_metadata is not None
+
+    candidate_snapshot.timeline.observations.clear()
+
+    candidate_snapshot.context.values[
+        "working_directory"
+    ] = "/modified"
+
+    behavioral_summary[
+        "operational_characteristics"
+    ]["total_operations"] = 999
+
+    pattern_metadata["observation_count"] = 999
+    pattern_metadata["complete"] = True
+
+    assert pattern.observation_count() == 1
+
+    assert (
+        pattern.context.values[
+            "working_directory"
+        ]
+        == "/project"
+    )
+
+    assert (
+        pattern.operational_characteristics[
+            "total_operations"
+        ]
+        == 1
+    )
+
+    assert pattern.metadata.observation_count == 1
+    assert pattern.metadata.complete is False
+
+
+def test_snapshot_read_does_not_change_active_pattern_status():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-readonly-006",
+    )
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime.now(),
+    }
+
+    manager.updatePattern(
+        "session-readonly-006",
+        observation,
+    )
+
+    original_status = pattern.metadata.status
+
+    snapshot = manager.getEvaluationSnapshot(
+        "session-readonly-006",
+    )
+
+    assert snapshot is not None
+
+    snapshot["candidate_pattern"].metadata.status = (
+        PatternStatus.COMPLETED
+    )
+
+    assert pattern.metadata.status == original_status
+    assert pattern.metadata.status == PatternStatus.LEARNING
+
+
+def test_missing_pattern_returns_none_for_all_read_views():
+    manager = CandidatePatternManager()
+
+    session_id = "unknown-readonly-session"
+
+    assert manager.getPatternSnapshot(session_id) is None
+    assert manager.getBehavioralSummary(session_id) is None
+    assert manager.getPatternMetadata(session_id) is None
+    assert manager.getEvaluationSnapshot(session_id) is None
