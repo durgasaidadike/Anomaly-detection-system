@@ -218,7 +218,9 @@ class CandidatePatternManager:
             if self._is_duplicate_observation(pattern, observation):
                 return pattern
 
-            self._validate_observation(observation)
+            self._validate_behavioral_signal(
+                observation
+            )
 
             if not self._is_chronologically_valid(
                 pattern,
@@ -508,6 +510,50 @@ class CandidatePatternManager:
 
         if "timestamp" not in observation:
             raise ValueError("Observation must contain a timestamp")
+
+    def _validate_behavioral_signal(
+        self,
+        observation: Dict[str, Any],
+    ) -> None:
+        """
+        Validate the minimum contract for an interpreted
+        Behavioral Signal.
+
+        A Behavioral Signal must contain:
+        - a timestamp
+        - evidence that it represents interpreted behavior
+
+        The manager intentionally does not require a specific
+        behavioral field such as operation_type because the
+        Behavior Analyzer may produce different signal forms.
+
+        Raw filesystem-event markers are rejected explicitly.
+        """
+
+        if not observation:
+            raise ValueError(
+                "Behavioral Signal cannot be empty"
+            )
+
+        if "timestamp" not in observation:
+            raise ValueError(
+                "Behavioral Signal must contain a timestamp"
+            )
+
+        raw_event_fields = {
+            "event_type",
+            "event_action",
+            "filesystem_event",
+            "raw_event",
+        }
+
+        if any(
+            field in observation
+            for field in raw_event_fields
+        ):
+            raise ValueError(
+                "Raw filesystem events cannot update Candidate Pattern"
+            )
 
     def _is_chronologically_valid(
         self,

@@ -3497,3 +3497,88 @@ def test_pattern_snapshot_contains_session_completion_state():
         snapshot.session_duration_seconds
         == 240.0
     )
+
+
+def test_behavioral_signal_is_accepted():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(
+            2026, 1, 1, 10, 0, 0
+        ),
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+
+
+def test_raw_filesystem_event_is_rejected():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "event_type": "deleted",
+        "path": "/workspace/secret.txt",
+        "timestamp": datetime(
+            2026, 1, 1, 10, 0, 0
+        ),
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 0
+
+
+def test_signal_without_operation_type_is_accepted():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "timestamp": datetime(
+            2026, 1, 1, 10, 0, 0
+        ),
+        "signal": "HIGH_ACTIVITY",
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
+
+
+def test_alternate_behavioral_signal_is_accepted():
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-1")
+
+    observation = {
+        "behavior_type": "rapid_modification",
+        "timestamp": datetime(
+            2026, 1, 1, 10, 0, 0
+        ),
+    }
+
+    pattern = manager.updatePattern(
+        "session-1",
+        observation,
+    )
+
+    assert pattern is not None
+    assert pattern.observation_count() == 1
