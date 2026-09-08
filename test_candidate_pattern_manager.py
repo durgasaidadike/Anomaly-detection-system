@@ -7097,3 +7097,335 @@ def test_idle_period_and_burst_can_coexist():
     assert temporal["burst_count"] >= 2
     assert temporal["burst_activity"] is True
     assert temporal["continuous_activity"] is False
+
+
+def test_reset_releases_active_candidate_pattern():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-reset-001",
+    )
+
+    manager.updatePattern(
+        "session-reset-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    removed = manager.resetPattern(
+        "session-reset-001",
+    )
+
+    assert removed is pattern
+    assert manager.getCurrentPattern(
+        "session-reset-001"
+    ) is None
+
+
+def test_reset_unknown_session_returns_none():
+    manager = CandidatePatternManager()
+
+    assert manager.resetPattern(
+        "unknown-reset-session"
+    ) is None
+
+
+def test_reset_does_not_affect_other_active_sessions():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-reset-002-a",
+    )
+
+    second = manager.createPattern(
+        session_id="session-reset-002-b",
+    )
+
+    manager.updatePattern(
+        "session-reset-002-b",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    removed = manager.resetPattern(
+        "session-reset-002-a",
+    )
+
+    assert removed is first
+
+    assert manager.getCurrentPattern(
+        "session-reset-002-a"
+    ) is None
+
+    assert manager.getCurrentPattern(
+        "session-reset-002-b"
+    ) is second
+
+    assert second.observation_count() == 1
+
+
+def test_reset_releases_all_temporary_behavioral_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-reset-003",
+    )
+
+    manager.updatePattern(
+        "session-reset-003",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "working_directory": "/project",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "main.py",
+            }
+        ],
+    )
+
+    assert pattern.observation_count() == 1
+    assert pattern.operational_characteristics
+    assert pattern.temporal_characteristics
+    assert pattern.context.values
+    assert pattern.relationship_characteristics
+    assert pattern.session_characteristics
+
+    removed = manager.resetPattern(
+        "session-reset-003",
+    )
+
+    assert removed is pattern
+    assert manager.getCurrentPattern(
+        "session-reset-003"
+    ) is None
+
+
+def test_same_session_id_after_reset_creates_fresh_pattern():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-reset-004",
+        user_id="user-001",
+    )
+
+    manager.updatePattern(
+        "session-reset-004",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    manager.resetPattern(
+        "session-reset-004",
+    )
+
+    second = manager.createPattern(
+        session_id="session-reset-004",
+        user_id="user-002",
+    )
+
+    assert second is not first
+    assert second.session_id == "session-reset-004"
+    assert second.user_id == "user-002"
+    assert second.observation_count() == 0
+    assert second.metadata.status == PatternStatus.INITIALIZING
+    assert second.metadata.complete is False
+    assert second.metadata.interrupted is False
+
+
+def test_reset_after_finalization_allows_new_session_state():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-reset-005",
+        user_id="user-001",
+    )
+
+    manager.updatePattern(
+        "session-reset-005",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+    )
+
+    finalized = manager.finalizePattern(
+        "session-reset-005",
+    )
+
+    assert finalized is first
+    assert first.metadata.status == PatternStatus.COMPLETED
+
+    removed = manager.resetPattern(
+        "session-reset-005",
+    )
+
+    assert removed is first
+    assert manager.getCurrentPattern(
+        "session-reset-005"
+    ) is None
+
+    second = manager.createPattern(
+        session_id="session-reset-005",
+        user_id="user-002",
+    )
+
+    assert second is not first
+    assert second.observation_count() == 0
+    assert second.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_finalized_pattern_state_does_not_leak_into_recreated_session():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-reset-006",
+    )
+
+    manager.updatePattern(
+        "session-reset-006",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        context={
+            "working_directory": "/old-project",
+        },
+        relationships=[
+            {
+                "type": "related_file",
+                "target": "old.py",
+            }
+        ],
+    )
+
+    manager.finalizePattern(
+        "session-reset-006",
+    )
+
+    manager.resetPattern(
+        "session-reset-006",
+    )
+
+    second = manager.createPattern(
+        session_id="session-reset-006",
+    )
+
+    assert second is not first
+    assert second.observation_count() == 0
+    assert second.operational_characteristics == {}
+    assert second.temporal_characteristics == {}
+    assert second.sequential_characteristics == []
+    assert second.relationship_characteristics == []
+    assert second.session_characteristics == {}
+    assert second.context.values == {}
+    assert second.contextual_characteristics == {}
+    assert second.metadata.status == PatternStatus.INITIALIZING
+
+
+def test_active_pattern_count_does_not_grow_for_same_session():
+    manager = CandidatePatternManager()
+
+    first = manager.createPattern(
+        session_id="session-reset-007",
+    )
+
+    second = manager.createPattern(
+        session_id="session-reset-007",
+    )
+
+    assert first is second
+    assert len(manager._active_patterns) == 1
+
+
+def test_reset_removes_only_target_session_from_active_registry():
+    manager = CandidatePatternManager()
+
+    sessions = [
+        "session-reset-008-a",
+        "session-reset-008-b",
+        "session-reset-008-c",
+    ]
+
+    patterns = {
+        session_id: manager.createPattern(
+            session_id=session_id,
+        )
+        for session_id in sessions
+    }
+
+    assert len(manager._active_patterns) == 3
+
+    manager.resetPattern(
+        "session-reset-008-b",
+    )
+
+    assert len(manager._active_patterns) == 2
+
+    assert manager.getCurrentPattern(
+        "session-reset-008-a"
+    ) is patterns["session-reset-008-a"]
+
+    assert manager.getCurrentPattern(
+        "session-reset-008-b"
+    ) is None
+
+    assert manager.getCurrentPattern(
+        "session-reset-008-c"
+    ) is patterns["session-reset-008-c"]
+
+
+def test_recreated_session_starts_without_previous_observation_count():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-reset-009",
+    )
+
+    for minute, operation in enumerate(
+        ["CREATE", "MODIFY", "DELETE"]
+    ):
+        manager.updatePattern(
+            "session-reset-009",
+            {
+                "operation_type": operation,
+                "timestamp": datetime(
+                    2026,
+                    1,
+                    1,
+                    10,
+                    minute,
+                    0,
+                ),
+            },
+        )
+
+    old_pattern = manager.getCurrentPattern(
+        "session-reset-009",
+    )
+
+    assert old_pattern is not None
+    assert old_pattern.observation_count() == 3
+
+    manager.resetPattern(
+        "session-reset-009",
+    )
+
+    new_pattern = manager.createPattern(
+        session_id="session-reset-009",
+    )
+
+    assert new_pattern is not old_pattern
+    assert new_pattern.observation_count() == 0
+    assert new_pattern.timeline.observations == []
+    assert new_pattern.metadata.observation_count == 0
