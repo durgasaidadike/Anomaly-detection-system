@@ -491,8 +491,19 @@ class CandidatePatternManager:
         observation: Dict[str, Any],
     ) -> None:
         """
-        Incrementally update temporal characteristics from an
-        interpreted behavioral observation.
+        Incrementally maintain temporal behavioral characteristics.
+
+        The Candidate Pattern tracks:
+        - observation timing
+        - time between operations
+        - session duration
+        - active time
+        - idle time
+        - burst activity
+        - continuous activity
+        - working rhythm
+
+        Updates are incremental and preserve chronological history.
         """
 
         timestamp = observation.get("timestamp")
@@ -510,28 +521,156 @@ class CandidatePatternManager:
             "last_observation_time"
         )
 
+        # First behavioral observation.
         if first_timestamp is None:
             characteristics["first_observation_time"] = timestamp
-        elif timestamp < first_timestamp:
-            characteristics["first_observation_time"] = timestamp
-
-        if last_timestamp is None:
-            characteristics["last_observation_time"] = timestamp
-        elif timestamp > last_timestamp:
             characteristics["last_observation_time"] = timestamp
 
-        first_timestamp = characteristics.get(
-            "first_observation_time"
+            characteristics["time_between_operations"] = []
+            characteristics["idle_intervals"] = []
+            characteristics["operation_intervals"] = []
+
+            characteristics["active_time_seconds"] = 0.0
+            characteristics["idle_time_seconds"] = 0.0
+            characteristics["duration_seconds"] = 0.0
+
+            characteristics["burst_count"] = 0
+            characteristics["continuous_activity"] = False
+            characteristics["working_rhythm"] = {
+                "observation_count": 1,
+                "average_interval_seconds": 0.0,
+                "min_interval_seconds": 0.0,
+                "max_interval_seconds": 0.0,
+            }
+
+            return
+
+        # Chronological validation is already enforced by
+        # CandidatePatternManager.updatePattern().
+        if timestamp < last_timestamp:
+            return
+
+        interval_seconds = (
+            timestamp - last_timestamp
+        ).total_seconds()
+
+        characteristics.setdefault(
+            "time_between_operations",
+            [],
+        ).append(interval_seconds)
+
+        characteristics.setdefault(
+            "operation_intervals",
+            [],
+        ).append(interval_seconds)
+
+        # Update session bounds.
+        characteristics["last_observation_time"] = timestamp
+
+        duration_seconds = (
+            timestamp
+            - first_timestamp
+        ).total_seconds()
+
+        characteristics["duration_seconds"] = duration_seconds
+
+        # Treat an interval as idle when it exceeds the
+        # inactivity threshold supplied by the observation.
+        idle_threshold = observation.get(
+            "idle_threshold_seconds",
+            60.0,
         )
 
-        last_timestamp = characteristics.get(
-            "last_observation_time"
+        try:
+            idle_threshold = float(idle_threshold)
+        except (TypeError, ValueError):
+            idle_threshold = 60.0
+
+        if interval_seconds > idle_threshold:
+            characteristics.setdefault(
+                "idle_intervals",
+                [],
+            ).append(interval_seconds)
+
+            characteristics["idle_time_seconds"] = (
+                characteristics.get(
+                    "idle_time_seconds",
+                    0.0,
+                )
+                + interval_seconds
+            )
+        else:
+            characteristics["active_time_seconds"] = (
+                characteristics.get(
+                    "active_time_seconds",
+                    0.0,
+                )
+                + interval_seconds
+            )
+
+        intervals = characteristics.get(
+            "time_between_operations",
+            [],
         )
 
-        if first_timestamp is not None and last_timestamp is not None:
-            characteristics["duration_seconds"] = (
-                last_timestamp - first_timestamp
-            ).total_seconds()
+        if intervals:
+            average_interval = (
+                sum(intervals)
+                / len(intervals)
+            )
+
+            min_interval = min(intervals)
+            max_interval = max(intervals)
+        else:
+            average_interval = 0.0
+            min_interval = 0.0
+            max_interval = 0.0
+
+        characteristics["working_rhythm"] = {
+            "observation_count": pattern.observation_count(),
+            "average_interval_seconds": average_interval,
+            "min_interval_seconds": min_interval,
+            "max_interval_seconds": max_interval,
+        }
+
+        # A burst is a short interval between consecutive
+        # behavioral observations.
+        burst_threshold = observation.get(
+            "burst_threshold_seconds",
+            5.0,
+        )
+
+        try:
+            burst_threshold = float(
+                burst_threshold
+            )
+        except (TypeError, ValueError):
+            burst_threshold = 5.0
+
+        if interval_seconds <= burst_threshold:
+            characteristics["burst_count"] = (
+                characteristics.get(
+                    "burst_count",
+                    0,
+                )
+                + 1
+            )
+
+        characteristics["burst_activity"] = (
+            characteristics.get(
+                "burst_count",
+                0,
+            )
+            > 0
+        )
+
+        characteristics["continuous_activity"] = (
+            len(intervals) > 0
+            and all(
+                interval <= idle_threshold
+                for interval in intervals
+            )
+        )
 
     def _update_sequential_characteristics(
         self,
@@ -599,17 +738,112 @@ class CandidatePatternManager:
         pattern: CandidatePattern,
     ) -> None:
         """
-        Incrementally update session-level characteristics of the
-        Candidate Pattern.
+        Incrementally maintain session-level behavioral
+        characteristics.
         """
 
         characteristics = pattern.session_characteristics
 
+        observation_count = pattern.observation_count()
+
         characteristics["session_id"] = pattern.session_id
         characteristics["user_id"] = pattern.user_id
+
         characteristics["session_start_time"] = (
             pattern.session_start_time
         )
+
         characteristics["observation_count"] = (
-            pattern.observation_count()
+            observation_count
         )
+
+        temporal = pattern.temporal_characteristics
+
+        characteristics["session_length_seconds"] = (
+            temporal.get(
+                "duration_seconds",
+                0.0,
+            )
+        )
+
+        operation_counts = pattern.operational_characteristics.get(
+            "operation_counts",
+            {},
+        )
+
+        characteristics["operation_diversity"] = len(
+            operation_counts
+        )
+
+        duration_seconds = temporal.get(
+            "duration_seconds",
+            0.0,
+        )
+
+        if duration_seconds > 0:
+            characteristics["behavioral_density"] = (
+                observation_count
+                / duration_seconds
+            )
+        else:
+            characteristics["behavioral_density"] = (
+                float(observation_count)
+            )
+
+        if observation_count <= 1:
+            characteristics["behavioral_consistency"] = 1.0
+        else:
+            intervals = temporal.get(
+                "time_between_operations",
+                [],
+            )
+
+            if not intervals:
+                characteristics[
+                    "behavioral_consistency"
+                ] = 1.0
+            else:
+                average_interval = (
+                    sum(intervals)
+                    / len(intervals)
+                )
+
+                if average_interval == 0:
+                    consistency = 1.0
+                else:
+                    deviation = sum(
+                        abs(
+                            interval
+                            - average_interval
+                        )
+                        for interval in intervals
+                    ) / len(intervals)
+
+                    consistency = max(
+                        0.0,
+                        1.0
+                        - (
+                            deviation
+                            / average_interval
+                        ),
+                    )
+
+                characteristics[
+                    "behavioral_consistency"
+                ] = consistency
+
+        # Task complexity is represented as the number of
+        # distinct operation types and the number of
+        # observed behavioral relationships.
+        relationship_count = len(
+            pattern.relationship_characteristics
+        )
+
+        characteristics["task_complexity"] = {
+            "operation_diversity": (
+                characteristics[
+                    "operation_diversity"
+                ]
+            ),
+            "relationship_count": relationship_count,
+        }

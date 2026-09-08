@@ -205,7 +205,7 @@ def test_update_failure_rolls_back_partial_state():
     def failing_update(*args, **kwargs):
         raise RuntimeError("simulated update failure")
 
-    manager._update_temporal_characteristics = failing_update
+    manager._update_operational_characteristics = failing_update
 
     second_observation = {
         "operation_type": "MODIFY",
@@ -2503,3 +2503,207 @@ def test_read_only_outputs_return_none_for_unknown_session():
     assert manager.getEvaluationSnapshot(
         "unknown-session"
     ) is None
+
+
+def test_temporal_characteristics_track_operation_intervals():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 5),
+    ]
+
+    for index, timestamp in enumerate(timestamps):
+        manager.updatePattern(
+            "session-001",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+            },
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["time_between_operations"] == [
+        2.0,
+        3.0,
+    ]
+
+    assert temporal["duration_seconds"] == 5.0
+
+
+def test_temporal_characteristics_track_idle_intervals():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 2, 0
+            ),
+            "idle_threshold_seconds": 60,
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["idle_intervals"] == [
+        120.0
+    ]
+
+    assert temporal["idle_time_seconds"] == 120.0
+
+
+def test_temporal_characteristics_track_burst_activity():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 2
+            ),
+            "burst_threshold_seconds": 5,
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    temporal = pattern.temporal_characteristics
+
+    assert temporal["burst_count"] == 1
+    assert temporal["burst_activity"] is True
+
+
+def test_temporal_characteristics_track_continuous_activity():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    timestamps = [
+        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 4),
+    ]
+
+    for timestamp in timestamps:
+        manager.updatePattern(
+            "session-001",
+            {
+                "operation_type": "MODIFY",
+                "timestamp": timestamp,
+                "idle_threshold_seconds": 60,
+            },
+        )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    assert (
+        pattern.temporal_characteristics[
+            "continuous_activity"
+        ]
+        is True
+    )
+
+
+def test_session_characteristics_track_density_and_complexity():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-001",
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 0
+            ),
+        },
+    )
+
+    manager.updatePattern(
+        "session-001",
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(
+                2026, 1, 1, 10, 0, 10
+            ),
+        },
+    )
+
+    pattern = manager.getCurrentPattern(
+        "session-001",
+    )
+
+    assert pattern is not None
+
+    characteristics = pattern.session_characteristics
+
+    assert characteristics["session_length_seconds"] == 10.0
+    assert characteristics["operation_diversity"] == 2
+    assert characteristics["behavioral_density"] == 0.2
+
+    assert (
+        characteristics["task_complexity"]
+        ["operation_diversity"]
+        == 2
+    )
