@@ -4673,3 +4673,387 @@ def test_missing_pattern_returns_none_for_all_read_views():
     assert manager.getBehavioralSummary(session_id) is None
     assert manager.getPatternMetadata(session_id) is None
     assert manager.getEvaluationSnapshot(session_id) is None
+
+
+def test_duplicate_signal_does_not_change_operational_state():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-001",
+    )
+
+    timestamp = datetime.now()
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": timestamp,
+    }
+
+    manager.updatePattern(
+        "session-integrity-001",
+        observation,
+    )
+
+    original_operational = copy.deepcopy(
+        pattern.operational_characteristics
+    )
+    original_temporal = copy.deepcopy(
+        pattern.temporal_characteristics
+    )
+    original_sequential = copy.deepcopy(
+        pattern.sequential_characteristics
+    )
+    original_session = copy.deepcopy(
+        pattern.session_characteristics
+    )
+
+    manager.updatePattern(
+        "session-integrity-001",
+        observation,
+    )
+
+    assert pattern.observation_count() == 1
+    assert (
+        pattern.operational_characteristics
+        == original_operational
+    )
+    assert (
+        pattern.temporal_characteristics
+        == original_temporal
+    )
+    assert (
+        pattern.sequential_characteristics
+        == original_sequential
+    )
+    assert (
+        pattern.session_characteristics
+        == original_session
+    )
+
+
+def test_duplicate_signal_does_not_create_duplicate_sequence_entry():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-002",
+    )
+
+    timestamp = datetime.now()
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": timestamp,
+    }
+
+    manager.updatePattern(
+        "session-integrity-002",
+        observation,
+    )
+
+    manager.updatePattern(
+        "session-integrity-002",
+        observation,
+    )
+
+    assert len(pattern.sequential_characteristics) == 1
+    assert (
+        pattern.sequential_characteristics[0][
+            "operation_type"
+        ]
+        == "MODIFY"
+    )
+
+
+def test_older_observation_is_rejected():
+    manager = CandidatePatternManager()
+
+    start = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-003",
+        session_start_time=start,
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+    }
+
+    older = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-003",
+        first,
+    )
+
+    result = manager.updatePattern(
+        "session-integrity-003",
+        older,
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert pattern.timeline.observations == [first]
+
+
+def test_older_observation_does_not_modify_characteristics():
+    manager = CandidatePatternManager()
+
+    start = datetime(2026, 1, 1, 10, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-004",
+        session_start_time=start,
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-004",
+        first,
+    )
+
+    original_operational = copy.deepcopy(
+        pattern.operational_characteristics
+    )
+    original_temporal = copy.deepcopy(
+        pattern.temporal_characteristics
+    )
+    original_sequential = copy.deepcopy(
+        pattern.sequential_characteristics
+    )
+    original_session = copy.deepcopy(
+        pattern.session_characteristics
+    )
+
+    older = {
+        "operation_type": "DELETE",
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-004",
+        older,
+    )
+
+    assert (
+        pattern.operational_characteristics
+        == original_operational
+    )
+    assert (
+        pattern.temporal_characteristics
+        == original_temporal
+    )
+    assert (
+        pattern.sequential_characteristics
+        == original_sequential
+    )
+    assert (
+        pattern.session_characteristics
+        == original_session
+    )
+
+
+def test_equal_timestamp_is_allowed_in_chronological_order():
+    manager = CandidatePatternManager()
+
+    timestamp = datetime(2026, 1, 1, 12, 0, 0)
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-005",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": timestamp,
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": timestamp,
+    }
+
+    manager.updatePattern(
+        "session-integrity-005",
+        first,
+    )
+
+    manager.updatePattern(
+        "session-integrity-005",
+        second,
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations == [
+        first,
+        second,
+    ]
+
+
+def test_chronological_order_is_preserved_across_multiple_updates():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-006",
+    )
+
+    observations = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        },
+        {
+            "operation_type": "DELETE",
+            "timestamp": datetime(2026, 1, 1, 10, 15, 0),
+        },
+    ]
+
+    for observation in observations:
+        manager.updatePattern(
+            "session-integrity-006",
+            observation,
+        )
+
+    timestamps = [
+        observation["timestamp"]
+        for observation in pattern.timeline.observations
+    ]
+
+    assert timestamps == sorted(timestamps)
+    assert pattern.timeline.observations == observations
+
+
+def test_rejected_older_observation_does_not_change_observation_count():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-007",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+    }
+
+    older = {
+        "operation_type": "DELETE",
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-007",
+        first,
+    )
+
+    manager.updatePattern(
+        "session-integrity-007",
+        second,
+    )
+
+    manager.updatePattern(
+        "session-integrity-007",
+        older,
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.metadata.observation_count == 2
+
+
+def test_rejected_older_observation_does_not_change_context():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-008",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-008",
+        first,
+        context={
+            "working_directory": "/project-a",
+        },
+    )
+
+    older = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-008",
+        older,
+        context={
+            "working_directory": "/project-b",
+        },
+    )
+
+    assert (
+        pattern.context.values["working_directory"]
+        == "/project-a"
+    )
+
+    assert (
+        pattern.contextual_characteristics[
+            "working_directory"
+        ]
+        == "/project-a"
+    )
+
+
+def test_duplicate_signal_after_other_observations_is_still_ignored():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        session_id="session-integrity-009",
+    )
+
+    first = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    second = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+    }
+
+    manager.updatePattern(
+        "session-integrity-009",
+        first,
+    )
+
+    manager.updatePattern(
+        "session-integrity-009",
+        second,
+    )
+
+    manager.updatePattern(
+        "session-integrity-009",
+        first,
+    )
+
+    assert pattern.observation_count() == 2
+    assert pattern.timeline.observations == [
+        first,
+        second,
+    ]
