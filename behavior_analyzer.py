@@ -77,14 +77,25 @@ class BehaviorAnalyzer:
         """
         Analyze a session and return behavioral understanding.
 
-        Partial behavioral information is returned whenever possible.
+        Produces the complete Module 04 output contract:
+        - Behavioral Signals
+        - Behavioral Context
+        - Behavioral Relationships
+        - Session Behavior Summary
+        - Processing Metadata
+        - Analysis Status
         """
         result: Dict[str, Any] = {
             "session_id": self._get_session_id(session),
             "behavioral_signals": [],
             "behavioral_context": {},
+            "behavioral_relationships": [],
             "session_behavior_summary": {},
+            "processing_metadata": {},
+            "analysis_status": "SUCCESS",
         }
+
+        failures = []
 
         try:
             result["behavioral_context"] = self._interpret_context(
@@ -92,6 +103,7 @@ class BehaviorAnalyzer:
                 metadata,
             )
         except Exception:
+            failures.append("context")
             logger.exception(
                 "Failed to interpret behavioral context for session '%s'.",
                 self._get_session_id(session),
@@ -103,8 +115,23 @@ class BehaviorAnalyzer:
                 metadata,
             )
         except Exception:
+            failures.append("signals")
             logger.exception(
                 "Failed to generate behavioral signals for session '%s'.",
+                self._get_session_id(session),
+            )
+
+        try:
+            result["behavioral_relationships"] = (
+                self._identify_behavioral_relationships(
+                    session,
+                    metadata,
+                )
+            )
+        except Exception:
+            failures.append("relationships")
+            logger.exception(
+                "Failed to identify behavioral relationships for session '%s'.",
                 self._get_session_id(session),
             )
 
@@ -114,14 +141,30 @@ class BehaviorAnalyzer:
                 metadata,
             )
         except Exception:
+            failures.append("summary")
             logger.exception(
                 "Failed to summarize behavior for session '%s'.",
                 self._get_session_id(session),
             )
 
+        result["processing_metadata"] = {
+            "event_count": len(self._get_events(session)),
+            "signal_count": len(result["behavioral_signals"]),
+            "relationship_count": len(
+                result["behavioral_relationships"]
+            ),
+            "failed_stages": list(failures),
+        }
+
+        if failures:
+            result["analysis_status"] = "PARTIAL"
+
         try:
             self.forward_observation(result)
         except Exception:
+            failures.append("forwarding")
+            result["analysis_status"] = "PARTIAL"
+
             logger.exception(
                 "Unexpected error while forwarding observation for session '%s'.",
                 self._get_session_id(session),
@@ -302,6 +345,11 @@ class BehaviorAnalyzer:
 
         signals: List[Dict[str, Any]] = []
 
+        signal_timestamp = self._behavioral_timestamp(
+            session,
+            metadata,
+        )
+
         operation_counts = Counter()
         extensions = set()
         directories = set()
@@ -339,6 +387,7 @@ class BehaviorAnalyzer:
                     "signal_type": "OPERATION_ACTIVITY",
                     "operation_type": operation_type,
                     "count": count,
+                    "timestamp": signal_timestamp,
                 }
             )
 
@@ -348,6 +397,7 @@ class BehaviorAnalyzer:
                     "signal_type": "EXTENSION_CONCENTRATION",
                     "extension_count": 1,
                     "extensions": sorted(extensions),
+                    "timestamp": signal_timestamp,
                 }
             )
         elif len(extensions) > 1:
@@ -356,6 +406,7 @@ class BehaviorAnalyzer:
                     "signal_type": "EXTENSION_DIVERSITY",
                     "extension_count": len(extensions),
                     "extensions": sorted(extensions),
+                    "timestamp": signal_timestamp,
                 }
             )
 
@@ -364,6 +415,7 @@ class BehaviorAnalyzer:
                 {
                     "signal_type": "DIRECTORY_CONCENTRATION",
                     "directory_count": 1,
+                    "timestamp": signal_timestamp,
                 }
             )
         elif len(directories) > 1:
@@ -371,6 +423,7 @@ class BehaviorAnalyzer:
                 {
                     "signal_type": "DIRECTORY_DIVERSITY",
                     "directory_count": len(directories),
+                    "timestamp": signal_timestamp,
                 }
             )
 
@@ -379,10 +432,95 @@ class BehaviorAnalyzer:
                 {
                     "signal_type": "SHORT_SESSION",
                     "event_count": 1,
+                    "timestamp": signal_timestamp,
                 }
             )
 
         return signals
+
+    def _behavioral_timestamp(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ):
+        """
+        Return the best available timestamp representing the analyzed
+        behavioral state.
+        """
+        effective_metadata = metadata or getattr(
+            session,
+            "metadata",
+            None,
+        )
+
+        if effective_metadata is not None:
+            last_activity = getattr(
+                effective_metadata,
+                "last_activity",
+                None,
+            )
+
+            if last_activity is not None:
+                return last_activity
+
+            start_time = getattr(
+                effective_metadata,
+                "start_time",
+                None,
+            )
+
+            if start_time is not None:
+                return start_time
+
+        return None
+
+    def _identify_behavioral_relationships(
+        self,
+        session: Session,
+        metadata: Optional[SessionMetadata] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Identify simple behavioral relationships from the ordered
+        operations in the active session.
+
+        Relationships capture how behavioral observations connect.
+        They are descriptive and do not make anomaly decisions.
+        """
+        events = self._get_events(session)
+
+        if len(events) < 2:
+            return []
+
+        relationships: List[Dict[str, Any]] = []
+
+        for previous_event, current_event in zip(
+            events,
+            events[1:],
+        ):
+            previous_operation = self._get_value(
+                previous_event,
+                "operation_type",
+                "event_type",
+            )
+
+            current_operation = self._get_value(
+                current_event,
+                "operation_type",
+                "event_type",
+            )
+
+            if not previous_operation or not current_operation:
+                continue
+
+            relationships.append(
+                {
+                    "relationship_type": "SEQUENTIAL",
+                    "from_operation": str(previous_operation),
+                    "to_operation": str(current_operation),
+                }
+            )
+
+        return relationships
 
     def summarizeBehavior(
         self,

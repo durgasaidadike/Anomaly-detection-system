@@ -110,3 +110,129 @@ def test_non_empty_behavioral_signal_contains_behavioral_information():
     for signal in result["behavioral_signals"]:
         assert isinstance(signal, dict)
         assert "signal_type" in signal
+
+
+def test_behavior_analyzer_exposes_complete_behavioral_output_contract():
+    timestamp = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+    metadata = SessionMetadata(
+        session_id="contract-session-003",
+        start_time=timestamp,
+        last_activity=timestamp,
+        event_count=2,
+        status="ACTIVE",
+    )
+
+    session = Session(
+        metadata=metadata,
+        events=[
+            {
+                "event_type": "CREATED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+            {
+                "event_type": "MODIFIED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+        ],
+    )
+
+    analyzer = BehaviorAnalyzer()
+
+    result = analyzer.analyzeSession(session)
+
+    assert "behavioral_signals" in result
+    assert "behavioral_context" in result
+    assert "behavioral_relationships" in result
+    assert "session_behavior_summary" in result
+    assert "processing_metadata" in result
+    assert "analysis_status" in result
+
+    assert isinstance(result["behavioral_signals"], list)
+    assert isinstance(result["behavioral_context"], dict)
+    assert isinstance(result["behavioral_relationships"], list)
+    assert isinstance(result["session_behavior_summary"], dict)
+    assert isinstance(result["processing_metadata"], dict)
+    assert isinstance(result["analysis_status"], str)
+
+
+def test_behavioral_signals_are_consumable_by_candidate_pattern_boundary():
+    timestamp = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+    metadata = SessionMetadata(
+        session_id="contract-session-004",
+        start_time=timestamp,
+        last_activity=timestamp,
+        event_count=2,
+        status="ACTIVE",
+    )
+
+    session = Session(
+        metadata=metadata,
+        events=[
+            {
+                "event_type": "CREATED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+            {
+                "event_type": "MODIFIED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+        ],
+    )
+
+    analyzer = BehaviorAnalyzer()
+
+    result = analyzer.analyzeSession(session)
+
+    assert result["behavioral_signals"]
+
+    for signal in result["behavioral_signals"]:
+        assert isinstance(signal, dict)
+        assert "signal_type" in signal
+        assert "timestamp" in signal
+
+
+def test_behavioral_relationships_are_forwarded_to_candidate_pattern_boundary():
+    timestamp = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+
+    metadata = SessionMetadata(
+        session_id="contract-session-005",
+        start_time=timestamp,
+        last_activity=timestamp,
+        event_count=2,
+        status="ACTIVE",
+    )
+
+    session = Session(
+        metadata=metadata,
+        events=[
+            {
+                "event_type": "CREATED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+            {
+                "event_type": "MODIFIED",
+                "file_path": "/workspace/a.txt",
+                "extension": ".txt",
+                "directory": "/workspace",
+            },
+        ],
+    )
+
+    analyzer = BehaviorAnalyzer()
+
+    result = analyzer.analyzeSession(session)
+
+    assert "behavioral_relationships" in result
+    assert isinstance(result["behavioral_relationships"], list)
