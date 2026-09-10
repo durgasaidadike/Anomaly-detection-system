@@ -40,6 +40,7 @@ class FinalPatternRepository:
         ] = {}
 
         self._recorded_pattern_ids = set()
+        self._recorded_occurrence_ids = set()
 
         self._behavioral_identity = (
             behavioral_identity
@@ -105,13 +106,16 @@ class FinalPatternRepository:
             )
 
             if existing_pattern_id is not None:
+                if pattern_id in self._recorded_occurrence_ids:
+                    return True
+
                 result = self._record_repeated_behavior(
                     existing_pattern_id,
                     pattern,
                 )
 
                 if result:
-                    self._recorded_pattern_ids.add(
+                    self._recorded_occurrence_ids.add(
                         pattern_id
                     )
 
@@ -270,15 +274,22 @@ class FinalPatternRepository:
                 self._recorded_pattern_ids
             )
 
-            # Every stored pattern must be marked as recorded.
+            # Every physically stored representative pattern must have been recorded.
             if not pattern_ids.issubset(
                 recorded_ids
             ):
                 return False
 
-            # Every recorded ID must correspond to a stored pattern.
-            if not recorded_ids.issubset(
-                pattern_ids
+            # A recorded pattern ID is allowed to exist without a corresponding
+            # entry in _patterns when it represents a repeated behavioral occurrence.
+            #
+            # Repeated behavioral occurrences intentionally update the existing
+            # behavioral knowledge record instead of creating another historical
+            # representative pattern.
+
+            # Representative and occurrence tracking must never overlap.
+            if recorded_ids.intersection(
+                self._recorded_occurrence_ids
             ):
                 return False
 
