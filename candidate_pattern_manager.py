@@ -259,37 +259,45 @@ class CandidatePatternManager:
             # Capture the complete state before any mutation occurs.
             previous_state = copy.deepcopy(pattern)
 
-            pattern.add_observation(observation)
+            # Detach caller-owned mutable inputs before they become
+            # part of the Candidate Pattern's internal state.
+            accepted_observation = copy.deepcopy(observation)
+            accepted_context = copy.deepcopy(context)
+            accepted_relationships = copy.deepcopy(relationships)
+
+            pattern.add_observation(
+                accepted_observation
+            )
 
             self._update_operational_characteristics(
                 pattern,
-                observation,
+                accepted_observation,
             )
 
             self._update_temporal_characteristics(
                 pattern,
-                observation,
+                accepted_observation,
             )
 
             self._update_sequential_characteristics(
                 pattern,
-                observation,
+                accepted_observation,
             )
 
-            if context:
+            if accepted_context:
                 self._refine_context(
                     pattern,
-                    context,
+                    accepted_context,
                 )
 
                 self._update_contextual_characteristics(
                     pattern,
-                    context,
+                    accepted_context,
                 )
 
             self._update_relationship_characteristics(
                 pattern,
-                relationships,
+                accepted_relationships,
             )
 
             self._update_session_characteristics(pattern)
@@ -465,8 +473,8 @@ class CandidatePatternManager:
         """
         Finalize the active Candidate Pattern.
 
-        If the session has not already been explicitly completed,
-        finalization records the current time as the session end.
+        Finalization is allowed only after the session has been
+        explicitly completed via completeSession().
 
         Empty or interrupted sessions cannot produce Final Patterns.
         """
@@ -500,11 +508,10 @@ class CandidatePatternManager:
         )
 
         try:
+            # Finalization is allowed only after the session lifecycle
+            # has explicitly reported completion.
             if pattern.session_end_time is None:
-                self.completeSession(session_id)
-
-            if pattern.session_end_time is None:
-                return pattern
+                return None
 
             pattern.metadata.status = PatternStatus.FINALIZING
 

@@ -6,6 +6,22 @@ from candidate_pattern_manager import CandidatePatternManager
 from candidate_pattern_models import PatternStatus
 
 
+def complete_session_for_finalization(
+    manager,
+    session_id,
+    end_time=None,
+):
+    completed = manager.completeSession(
+        session_id,
+        session_end_time=end_time,
+    )
+
+    assert completed is not None
+    assert completed.session_end_time is not None
+
+    return completed
+
+
 def test_create_pattern():
     manager = CandidatePatternManager()
 
@@ -544,6 +560,8 @@ def test_finalize_pattern_completes_valid_pattern():
         observation,
     )
 
+    manager.completeSession("session-001")
+
     pattern = manager.finalizePattern("session-001")
 
     assert pattern is not None
@@ -639,6 +657,8 @@ def test_finalize_preserves_latest_valid_observations():
         second,
     )
 
+    manager.completeSession("session-001")
+
     pattern = manager.finalizePattern(
         "session-001",
     )
@@ -691,6 +711,8 @@ def test_reset_preserves_returned_pattern_object():
         "session-001",
         observation,
     )
+
+    manager.completeSession("session-001")
 
     finalized = manager.finalizePattern(
         "session-001",
@@ -773,6 +795,8 @@ def test_completed_pattern_cannot_be_updated():
         first,
     )
 
+    manager.completeSession("session-001")
+
     finalized = manager.finalizePattern(
         "session-001",
     )
@@ -833,6 +857,78 @@ def test_interrupted_pattern_cannot_be_updated():
     assert result is frozen
     assert result.observation_count() == 1
     assert second not in result.timeline.observations
+
+
+def test_finalize_requires_explicit_session_completion():
+    manager = CandidatePatternManager()
+
+    manager.createPattern(
+        session_id="session-finalization-001",
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "session-finalization-001",
+        observation,
+    )
+
+    result = manager.finalizePattern(
+        "session-finalization-001",
+    )
+
+    assert result is None
+
+    pattern = manager.getCurrentPattern(
+        "session-finalization-001"
+    )
+
+    assert pattern is not None
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.status != PatternStatus.COMPLETED
+
+
+def test_explicit_session_completion_allows_finalization():
+    manager = CandidatePatternManager()
+
+    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    end_time = datetime(2026, 1, 1, 10, 5, 0)
+
+    manager.createPattern(
+        session_id="session-finalization-002",
+        session_start_time=start_time,
+    )
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": start_time,
+    }
+
+    manager.updatePattern(
+        "session-finalization-002",
+        observation,
+    )
+
+    completed = manager.completeSession(
+        "session-finalization-002",
+        session_end_time=end_time,
+    )
+
+    assert completed is not None
+    assert completed.session_end_time == end_time
+    assert completed.session_duration_seconds == 300.0
+
+    finalized = manager.finalizePattern(
+        "session-finalization-002",
+    )
+
+    assert finalized is not None
+    assert finalized.metadata.complete is True
+    assert finalized.metadata.status == PatternStatus.COMPLETED
+    assert finalized.session_end_time == end_time
 
 
 def test_initializing_pattern_can_be_updated():
@@ -1009,6 +1105,8 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
         "session-001",
         observation,
     )
+
+    manager.completeSession("session-001")
 
     pattern = manager.finalizePattern(
         "session-001",
@@ -2018,6 +2116,8 @@ def test_finalization_preserves_learned_characteristics():
         relationships=[relationship],
     )
 
+    manager.completeSession("session-1")
+
     pattern = manager.finalizePattern("session-1")
 
     assert pattern is not None
@@ -2052,6 +2152,7 @@ def test_completed_pattern_cannot_be_modified():
         },
     )
 
+    manager.completeSession("session-1")
     manager.finalizePattern("session-1")
 
     result = manager.updatePattern(
@@ -2078,6 +2179,11 @@ def test_repeated_finalization_returns_completed_pattern():
             "operation_type": "CREATE",
             "timestamp": datetime(2026, 1, 1, 10, 0, 0),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-1",
     )
 
     first = manager.finalizePattern("session-1")
@@ -2110,6 +2216,11 @@ def test_finalized_pattern_is_handed_off():
             "operation_type": "CREATE",
             "timestamp": datetime(2026, 1, 1, 10, 0, 0),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-1",
     )
 
     pattern = manager.finalizePattern("session-1")
@@ -2199,6 +2310,11 @@ def test_failed_handoff_does_not_corrupt_completed_pattern():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-1",
+    )
+
     pattern = manager.finalizePattern("session-1")
 
     assert pattern is not None
@@ -2228,6 +2344,11 @@ def test_handler_returning_false_is_failed_handoff():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-1",
+    )
+
     pattern = manager.finalizePattern("session-1")
 
     assert pattern is not None
@@ -2246,6 +2367,11 @@ def test_finalization_without_handler_still_succeeds():
             "operation_type": "CREATE",
             "timestamp": datetime(2026, 1, 1, 10, 0, 0),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-1",
     )
 
     pattern = manager.finalizePattern("session-1")
@@ -2283,6 +2409,11 @@ def test_manager_can_handoff_to_final_pattern_repository_adapter():
             "file_extension": ".py",
             "directory": "/project",
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-001",
     )
 
     finalized = manager.finalizePattern(
@@ -2505,6 +2636,136 @@ def test_read_only_outputs_return_none_for_unknown_session():
     assert manager.getEvaluationSnapshot(
         "unknown-session"
     ) is None
+
+
+def test_update_detaches_observation_from_caller():
+    from datetime import datetime
+
+    manager = CandidatePatternManager()
+
+    manager.createPattern("session-isolation-001")
+
+    observation = {
+        "operation_type": "CREATE",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "details": {
+            "path": "/workspace/a.txt",
+            "attributes": {
+                "size": 100,
+            },
+        },
+    }
+
+    manager.updatePattern(
+        "session-isolation-001",
+        observation,
+    )
+
+    observation["details"]["path"] = "/tampered/a.txt"
+    observation["details"]["attributes"]["size"] = 9999
+
+    pattern = manager.getCurrentPattern(
+        "session-isolation-001"
+    )
+
+    assert pattern.timeline.observations[0]["details"]["path"] == (
+        "/workspace/a.txt"
+    )
+
+    assert (
+        pattern.timeline.observations[0]["details"]["attributes"]["size"]
+        == 100
+    )
+
+
+def test_update_detaches_context_from_caller():
+    from datetime import datetime
+
+    manager = CandidatePatternManager()
+
+    manager.createPattern("context-isolation-001")
+
+    context = {
+        "working_directory": {
+            "path": "/workspace",
+            "metadata": {
+                "project": "PRISM",
+            },
+        }
+    }
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    manager.updatePattern(
+        "context-isolation-001",
+        observation,
+        context=context,
+    )
+
+    context["working_directory"]["path"] = "/tampered"
+    context["working_directory"]["metadata"]["project"] = "CORRUPTED"
+
+    pattern = manager.getCurrentPattern(
+        "context-isolation-001"
+    )
+
+    assert (
+        pattern.context.values["working_directory"]["path"]
+        == "/workspace"
+    )
+
+    assert (
+        pattern.context.values["working_directory"]["metadata"]["project"]
+        == "PRISM"
+    )
+
+
+def test_update_detaches_relationships_from_caller():
+    from datetime import datetime
+
+    manager = CandidatePatternManager()
+
+    manager.createPattern("relationship-isolation-001")
+
+    observation = {
+        "operation_type": "MODIFY",
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+    }
+
+    relationships = [
+        {
+            "source": "CREATE",
+            "target": "MODIFY",
+            "metadata": {
+                "strength": 1,
+            },
+        }
+    ]
+
+    manager.updatePattern(
+        "relationship-isolation-001",
+        observation,
+        relationships=relationships,
+    )
+
+    relationships[0]["metadata"]["strength"] = 999
+    relationships[0]["target"] = "CORRUPTED"
+
+    pattern = manager.getCurrentPattern(
+        "relationship-isolation-001"
+    )
+
+    assert pattern.relationship_characteristics[0]["target"] == (
+        "MODIFY"
+    )
+
+    assert (
+        pattern.relationship_characteristics[0]["metadata"]["strength"]
+        == 1
+    )
 
 
 def test_temporal_characteristics_track_operation_intervals():
@@ -3227,7 +3488,7 @@ def test_complete_session_records_end_time_and_duration():
     )
 
 
-def test_finalize_pattern_auto_completes_session():
+def test_finalize_pattern_does_not_auto_complete_session():
     manager = CandidatePatternManager()
 
     start_time = datetime(
@@ -3253,10 +3514,16 @@ def test_finalize_pattern_auto_completes_session():
         "session-1"
     )
 
-    assert finalized is not None
-    assert finalized.session_end_time is not None
-    assert finalized.session_duration_seconds is not None
-    assert finalized.metadata.status == PatternStatus.COMPLETED
+    assert finalized is None
+
+    pattern = manager.getCurrentPattern(
+        "session-1"
+    )
+
+    assert pattern is not None
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.status == PatternStatus.LEARNING
+    assert pattern.session_end_time is None
 
 
 def test_complete_session_rejects_end_before_session_start():
@@ -3764,6 +4031,11 @@ def test_completed_pattern_cannot_begin_evaluation():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-1",
+    )
+
     manager.finalizePattern("session-1")
 
     pattern = manager.beginEvaluation(
@@ -3946,6 +4218,11 @@ def test_finalization_is_isolated_between_sessions():
                 2026, 1, 1, 11, 0, 0
             ),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-a",
     )
 
     finalized = manager.finalizePattern(
@@ -4250,6 +4527,11 @@ def test_completed_pattern_cannot_return_to_learning():
         observation,
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-lifecycle-010",
+    )
+
     manager.finalizePattern(
         "session-lifecycle-010",
     )
@@ -4281,6 +4563,11 @@ def test_completed_pattern_cannot_reenter_evaluation():
         observation,
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-lifecycle-011",
+    )
+
     manager.finalizePattern(
         "session-lifecycle-011",
     )
@@ -4310,6 +4597,11 @@ def test_completed_pattern_does_not_accept_new_observations():
     manager.updatePattern(
         "session-lifecycle-012",
         first,
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-lifecycle-012",
     )
 
     manager.finalizePattern(
@@ -5603,6 +5895,11 @@ def test_final_pattern_handler_receives_completed_candidate():
         observation,
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-final-001",
+    )
+
     finalized = manager.finalizePattern(
         "session-final-001",
     )
@@ -5751,6 +6048,11 @@ def test_handler_returning_false_does_not_corrupt_completed_pattern():
         observation,
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-final-005",
+    )
+
     result = manager.finalizePattern(
         "session-final-005",
     )
@@ -5795,6 +6097,11 @@ def test_handler_exception_does_not_corrupt_preexisting_behavior():
         pattern.operational_characteristics
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-final-006",
+    )
+
     result = manager.finalizePattern(
         "session-final-006",
     )
@@ -5831,6 +6138,11 @@ def test_handoff_failure_does_not_remove_active_pattern():
             "operation_type": "MODIFY",
             "timestamp": datetime(2026, 1, 1, 10, 0, 0),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-final-007",
     )
 
     result = manager.finalizePattern(
@@ -5915,6 +6227,11 @@ def test_finalization_is_idempotent_after_completion():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-final-009",
+    )
+
     first = manager.finalizePattern(
         "session-final-009",
     )
@@ -5947,6 +6264,11 @@ def test_finalization_keeps_finalized_pattern_available_until_reset():
             "operation_type": "DELETE",
             "timestamp": datetime(2026, 1, 1, 10, 0, 0),
         },
+    )
+
+    complete_session_for_finalization(
+        manager,
+        "session-final-010",
     )
 
     finalized = manager.finalizePattern(
@@ -7259,6 +7581,11 @@ def test_reset_after_finalization_allows_new_session_state():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-reset-005",
+    )
+
     finalized = manager.finalizePattern(
         "session-reset-005",
     )
@@ -8113,6 +8440,11 @@ def test_session_isolation_survives_full_lifecycle():
         },
     )
 
+    complete_session_for_finalization(
+        manager,
+        "session-final-check-005-a",
+    )
+
     manager.finalizePattern(
         "session-final-check-005-a",
     )
@@ -8186,6 +8518,11 @@ def test_failed_update_then_successful_update_preserves_lifecycle():
 
     assert pattern.observation_count() == 2
     assert pattern.metadata.status == PatternStatus.LEARNING
+
+    complete_session_for_finalization(
+        manager,
+        "session-final-check-006",
+    )
 
     finalized = manager.finalizePattern(
         "session-final-check-006",
