@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from candidate_pattern_manager import CandidatePatternManager
 from final_pattern_repository_adapter import (
@@ -6,70 +6,92 @@ from final_pattern_repository_adapter import (
 )
 
 
-def test_completed_pattern_reaches_repository_with_normalized_operations(
-    monkeypatch,
-):
-    stored_records = []
-
-    monkeypatch.setattr(
-        "final_pattern_repository_adapter.store_pattern",
-        lambda record: stored_records.append(record),
-    )
-
+def test_completed_pattern_reaches_repository_with_operations_preserved():
     adapter = FinalPatternRepositoryAdapter()
 
     manager = CandidatePatternManager(
         final_pattern_handler=adapter.store,
     )
 
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        tzinfo=timezone.utc,
+    )
+
     manager.createPattern(
         "session-1",
         user_id="user-1",
-        session_start_time=datetime(
-            2026,
-            1,
-            1,
-            10,
-            0,
-        ),
+        session_start_time=start_time,
     )
 
     observations = [
         {
-            "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0),
+            "operation_type": "CREATED",
+            "timestamp": start_time,
             "file_extension": ".txt",
             "directory": "Documents",
             "event_hour": 10,
             "file_size": 1000,
         },
         {
-            "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 5),
+            "operation_type": "MODIFIED",
+            "timestamp": datetime(
+                2026,
+                1,
+                1,
+                10,
+                5,
+                tzinfo=timezone.utc,
+            ),
             "file_extension": ".docx",
             "directory": "Projects",
             "event_hour": 10,
             "file_size": 5000,
         },
         {
-            "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 10),
+            "operation_type": "DELETED",
+            "timestamp": datetime(
+                2026,
+                1,
+                1,
+                10,
+                10,
+                tzinfo=timezone.utc,
+            ),
             "file_extension": ".xlsx",
             "directory": "Downloads",
             "event_hour": 10,
             "file_size": 2500,
         },
         {
-            "operation_type": "MOVE",
-            "timestamp": datetime(2026, 1, 1, 10, 15),
+            "operation_type": "MOVED",
+            "timestamp": datetime(
+                2026,
+                1,
+                1,
+                10,
+                15,
+                tzinfo=timezone.utc,
+            ),
             "file_extension": ".pdf",
             "directory": "Archive",
             "event_hour": 10,
             "file_size": 8000,
         },
         {
-            "operation_type": "COPY",
-            "timestamp": datetime(2026, 1, 1, 10, 20),
+            "operation_type": "COPIED",
+            "timestamp": datetime(
+                2026,
+                1,
+                1,
+                10,
+                20,
+                tzinfo=timezone.utc,
+            ),
             "file_extension": ".zip",
             "directory": "Backups",
             "event_hour": 10,
@@ -83,6 +105,18 @@ def test_completed_pattern_reaches_repository_with_normalized_operations(
             observation,
         )
 
+    manager.completeSession(
+        "session-1",
+        session_end_time=datetime(
+            2026,
+            1,
+            1,
+            10,
+            25,
+            tzinfo=timezone.utc,
+        ),
+    )
+
     finalized_pattern = manager.finalizePattern(
         "session-1"
     )
@@ -90,75 +124,71 @@ def test_completed_pattern_reaches_repository_with_normalized_operations(
     assert finalized_pattern is not None
     assert finalized_pattern.metadata.complete is True
 
-    assert stored_records == [
-        {
-            "event_type": "CREATED",
-            "file_extension": ".txt",
-            "directory": "Documents",
-            "event_hour": 10,
-            "file_size": 1000,
-        },
-        {
-            "event_type": "MODIFIED",
-            "file_extension": ".docx",
-            "directory": "Projects",
-            "event_hour": 10,
-            "file_size": 5000,
-        },
-        {
-            "event_type": "DELETED",
-            "file_extension": ".xlsx",
-            "directory": "Downloads",
-            "event_hour": 10,
-            "file_size": 2500,
-        },
-        {
-            "event_type": "MOVED",
-            "file_extension": ".pdf",
-            "directory": "Archive",
-            "event_hour": 10,
-            "file_size": 8000,
-        },
-        {
-            "event_type": "COPIED",
-            "file_extension": ".zip",
-            "directory": "Backups",
-            "event_hour": 10,
-            "file_size": 15000,
-        },
+    repository = adapter.get_repository()
+
+    stored_patterns = repository.get_all()
+
+    assert len(stored_patterns) == 1
+
+    stored_pattern = stored_patterns[0]
+
+    assert stored_pattern.session_id == "session-1"
+    assert stored_pattern.user_id == "user-1"
+    assert stored_pattern.observation_count == 5
+
+    assert [
+        observation["operation_type"]
+        for observation in stored_pattern.observations
+    ] == [
+        "CREATED",
+        "MODIFIED",
+        "DELETED",
+        "MOVED",
+        "COPIED",
     ]
 
+    assert stored_pattern.observations == observations
 
-def test_finalized_pattern_is_handed_off_only_once(
-    monkeypatch,
-):
-    stored_records = []
 
-    monkeypatch.setattr(
-        "final_pattern_repository_adapter.store_pattern",
-        lambda record: stored_records.append(record),
-    )
-
+def test_finalized_pattern_is_handed_off_only_once():
     adapter = FinalPatternRepositoryAdapter()
 
     manager = CandidatePatternManager(
         final_pattern_handler=adapter.store,
     )
 
-    manager.createPattern("session-1")
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    manager.createPattern(
+        "session-1",
+        session_start_time=start_time,
+    )
 
     manager.updatePattern(
         "session-1",
         {
-            "operation_type": "CREATE",
-            "timestamp": datetime(
-                2026,
-                1,
-                1,
-                10,
-                0,
-            ),
+            "operation_type": "CREATED",
+            "timestamp": start_time,
         },
+    )
+
+    manager.completeSession(
+        "session-1",
+        session_end_time=datetime(
+            2026,
+            1,
+            1,
+            10,
+            1,
+            tzinfo=timezone.utc,
+        ),
     )
 
     first_result = manager.finalizePattern(
@@ -170,4 +200,8 @@ def test_finalized_pattern_is_handed_off_only_once(
     )
 
     assert first_result is second_result
-    assert len(stored_records) == 1
+
+    repository = adapter.get_repository()
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
