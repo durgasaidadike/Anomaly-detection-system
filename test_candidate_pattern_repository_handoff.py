@@ -689,3 +689,235 @@ def test_repository_internal_failure_does_not_leave_partial_state(monkeypatch):
 
     assert current_patterns == original_patterns
     assert current_knowledge == original_knowledge
+
+
+def test_repeated_behavior_failure_does_not_leave_partial_state(
+    monkeypatch,
+):
+    start = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    repository = FinalPatternRepository()
+    manager = build_manager_with_repository(repository)
+
+    first_session_id = "repository-repeat-failure-001"
+
+    populate_candidate(
+        manager,
+        first_session_id,
+        start,
+    )
+
+    manager.completeSession(
+        first_session_id,
+        session_end_time=start + timedelta(seconds=5),
+    )
+
+    finalized_candidate = manager.finalizePattern(
+        first_session_id
+    )
+
+    assert finalized_candidate is not None
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() is True
+
+    stored_pattern = repository.get_all()[0]
+
+    original_patterns = repository.get_all()
+    original_knowledge = repository.get_all_knowledge()
+
+    knowledge_before = repository.find_knowledge(
+        stored_pattern
+    )
+
+    assert knowledge_before is not None
+
+    occurrence_count_before = (
+        knowledge_before.occurrence_count
+    )
+
+    # Since find_knowledge returns a snapshot, we need to monkeypatch
+    # the actual knowledge object in the repository
+    knowledge_id = f"knowledge-{stored_pattern.pattern_id}"
+    actual_knowledge = repository._knowledge[knowledge_id]
+
+    original_record_occurrence = (
+        actual_knowledge.record_occurrence
+    )
+
+    def failing_record_occurrence(*args, **kwargs):
+        raise RuntimeError(
+            "forced repeated-behavior failure"
+        )
+
+    monkeypatch.setattr(
+        actual_knowledge,
+        "record_occurrence",
+        failing_record_occurrence,
+    )
+
+    repeated_pattern = replace(
+        stored_pattern,
+        # Use a different pattern ID to trigger repeated behavior with different ID
+        pattern_id=f"{stored_pattern.pattern_id}-repeat",
+        created_at=start + timedelta(minutes=1),
+    )
+
+    result = repository.store(
+        repeated_pattern
+    )
+
+    assert result is False
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() is True
+
+    knowledge_after = repository.find_knowledge(
+        stored_pattern
+    )
+
+    assert knowledge_after is not None
+
+    assert (
+        knowledge_after.occurrence_count
+        == occurrence_count_before
+    )
+
+    assert (
+        repeated_pattern.pattern_id
+        not in repository._recorded_occurrence_ids
+    )
+
+    assert repository.get_all() == original_patterns
+    assert repository.get_all_knowledge() == original_knowledge
+
+
+def test_repeated_behavior_occurrence_registration_failure_is_atomic(
+    monkeypatch,
+):
+    start = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    repository = FinalPatternRepository()
+    manager = build_manager_with_repository(repository)
+
+    first_session_id = (
+        "repository-occurrence-atomicity-001"
+    )
+
+    populate_candidate(
+        manager,
+        first_session_id,
+        start,
+    )
+
+    manager.completeSession(
+        first_session_id,
+        session_end_time=start + timedelta(seconds=5),
+    )
+
+    finalized_candidate = manager.finalizePattern(
+        first_session_id
+    )
+
+    assert finalized_candidate is not None
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() == True
+
+    stored_pattern = repository.get_all()[0]
+
+    knowledge_before = repository.find_knowledge(
+        stored_pattern
+    )
+
+    assert knowledge_before is not None
+
+    occurrence_count_before = (
+        knowledge_before.occurrence_count
+    )
+
+    original_patterns = repository.get_all()
+    original_knowledge = repository.get_all_knowledge()
+    original_occurrence_ids = set(
+        repository._recorded_occurrence_ids
+    )
+
+    class FailingOccurrenceSet(set):
+        def add(self, value):
+            raise RuntimeError(
+                "forced occurrence registration failure"
+            )
+
+    failing_occurrence_ids = FailingOccurrenceSet(
+        original_occurrence_ids
+    )
+
+    monkeypatch.setattr(
+        repository,
+        "_recorded_occurrence_ids",
+        failing_occurrence_ids,
+    )
+
+    repeated_pattern = replace(
+        stored_pattern,
+        pattern_id=(
+            f"{stored_pattern.pattern_id}-atomicity"
+        ),
+        created_at=start + timedelta(minutes=1),
+    )
+
+    result = repository.store(
+        repeated_pattern
+    )
+
+    assert result is False
+
+    # The historical pattern set must be unchanged.
+    assert repository.count() == 1
+    assert repository.get_all() == original_patterns
+
+    # The knowledge aggregate must also be unchanged.
+    assert repository.knowledge_count() == 1
+
+    knowledge_after = repository.find_knowledge(
+        stored_pattern
+    )
+
+    assert knowledge_after is not None
+
+    assert (
+        knowledge_after.occurrence_count
+        == occurrence_count_before
+    )
+
+    assert (
+        repository.get_all_knowledge()
+        == original_knowledge
+    )
+
+    # The failed occurrence must not be considered recorded.
+    assert (
+        repeated_pattern.pattern_id
+        not in repository._recorded_occurrence_ids
+    )
+
+    assert repository.validate_integrity() is True

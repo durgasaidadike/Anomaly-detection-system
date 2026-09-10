@@ -101,26 +101,17 @@ class FinalPatternRepository:
             # Repeated behavioral identity
             # ------------------------------------------------------------------
             if pattern_key in self._pattern_index:
-                existing_pattern_id = self._pattern_index[pattern_key]
+                existing_pattern_id = self._pattern_index[
+                    pattern_key
+                ]
 
                 if pattern_id in self._recorded_occurrence_ids:
                     return True
 
-                # Perform the repeated-behavior operation.
-                #
-                # This must complete successfully before recording the
-                # occurrence as processed.
-                success = self._record_repeated_behavior(
+                return self._record_repeated_behavior(
                     existing_pattern_id,
                     pattern,
                 )
-
-                if not success:
-                    return False
-
-                self._recorded_occurrence_ids.add(pattern_id)
-
-                return True
 
             # ------------------------------------------------------------------
             # New behavioral identity
@@ -489,12 +480,11 @@ class FinalPatternRepository:
         incoming_pattern: FinalPattern,
     ) -> bool:
         """
-        Strengthen the existing behavioral knowledge without mutating
-        the historical FinalPattern.
+        Strengthen existing behavioral knowledge atomically.
 
-        This method updates the knowledge in place, which is safe
-        for repeated behavior recording since the knowledge record
-        already exists and is being strengthened.
+        The historical FinalPattern is never mutated. If any part of
+        repeated-occurrence recording fails, the existing knowledge state
+        is restored and the operation reports failure.
         """
 
         knowledge_id = (
@@ -508,11 +498,25 @@ class FinalPatternRepository:
         if knowledge is None:
             return False
 
-        knowledge.record_occurrence(
-            incoming_pattern.created_at
-        )
+        knowledge_snapshot = knowledge.snapshot()
 
-        return True
+        try:
+            knowledge.record_occurrence(
+                incoming_pattern.created_at
+            )
+
+            self._recorded_occurrence_ids.add(
+                incoming_pattern.pattern_id
+            )
+
+            return True
+
+        except Exception:
+            self._knowledge[knowledge_id] = (
+                knowledge_snapshot
+            )
+
+            return False
 
     def _validate_final_pattern(
         self,
