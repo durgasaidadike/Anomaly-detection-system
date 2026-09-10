@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import copy
+from dataclasses import replace
 
 from candidate_pattern_manager import CandidatePatternManager
 from final_pattern_repository import FinalPatternRepository
@@ -593,3 +594,98 @@ def test_repository_failed_store_does_not_leave_partial_state():
     assert repository.get_all() == []
     assert repository.get_all_knowledge() == []
     assert repository.validate_integrity() is True
+
+
+def test_repository_internal_failure_does_not_leave_partial_state(monkeypatch):
+    start = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    repository = FinalPatternRepository()
+    manager = build_manager_with_repository(repository)
+
+    session_id = "repository-transaction-001"
+
+    populate_candidate(
+        manager,
+        session_id,
+        start,
+    )
+
+    manager.completeSession(
+        session_id,
+        session_end_time=start + timedelta(seconds=5),
+    )
+
+    finalized_candidate = manager.finalizePattern(session_id)
+
+    assert finalized_candidate is not None
+
+    stored_patterns = repository.get_all()
+
+    assert len(stored_patterns) == 1
+
+    existing_pattern = stored_patterns[0]
+
+    # Start with a known-good repository state.
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() is True
+
+    original_patterns = repository.get_all()
+    original_knowledge = repository.get_all_knowledge()
+
+    # Force a failure while the repository is creating knowledge
+    # for a genuinely new behavioral identity.
+    def failing_create(*args, **kwargs):
+        raise RuntimeError(
+            "forced repository knowledge creation failure"
+        )
+
+    monkeypatch.setattr(
+        repository,
+        "_create_behavioral_knowledge",
+        failing_create,
+    )
+
+    # Create another valid FinalPattern with a distinct identity.
+    # We need to ensure the behavioral key is different by changing operation type
+    new_observations = copy.deepcopy(
+        existing_pattern.observations
+    )
+
+    new_observations[0] = copy.deepcopy(
+        new_observations[0]
+    )
+
+    new_observations[0]["operation_type"] = "DELETE"
+
+    new_pattern = replace(
+        existing_pattern,
+        pattern_id=(
+            f"{existing_pattern.pattern_id}-new"
+        ),
+        observations=new_observations,
+    )
+
+    result = repository.store(new_pattern)
+
+    assert result is False
+
+    # Repository must remain exactly as it was before
+    # the failed operation.
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() is True
+
+    current_patterns = repository.get_all()
+    current_knowledge = repository.get_all_knowledge()
+
+    assert current_patterns == original_patterns
+    assert current_knowledge == original_knowledge

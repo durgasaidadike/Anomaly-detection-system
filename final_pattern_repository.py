@@ -61,17 +61,16 @@ class FinalPatternRepository:
         pattern: FinalPattern,
     ) -> bool:
         """
-        Store a new historical FinalPattern or record another
-        occurrence of an already-known behavioral blueprint.
+        Store a FinalPattern atomically.
 
-        Re-submitting the same historical FinalPattern is idempotent.
-        Reusing an existing pattern ID for different behavior is rejected.
+        A failed store operation must not leave partial state behind.
+        Historical FinalPatterns remain immutable once stored.
         """
 
-        if not self._validate_final_pattern(pattern):
-            return False
-
         try:
+            if not self._validate_final_pattern(pattern):
+                return False
+
             pattern_id = pattern.pattern_id
 
             pattern_key = (
@@ -80,64 +79,72 @@ class FinalPatternRepository:
                 )
             )
 
-            existing_pattern = self._patterns.get(
-                pattern_id
-            )
+            # ------------------------------------------------------------------
+            # Existing pattern-id handling
+            # ------------------------------------------------------------------
+            if pattern_id in self._patterns:
+                existing_pattern = self._patterns[pattern_id]
 
-            if existing_pattern is not None:
-                existing_pattern_key = (
-                    self._behavioral_identity.build_key(
-                        existing_pattern
-                    )
+                existing_key = self._behavioral_identity.build_key(
+                    existing_pattern
                 )
 
-                if existing_pattern_key != pattern_key:
-                    return False
+                if existing_key == pattern_key:
+                    return True
 
-                return True
+                return False
 
             if pattern_id in self._recorded_pattern_ids:
                 return True
 
-            existing_pattern_id = (
-                self._pattern_index.get(
-                    pattern_key
-                )
-            )
+            # ------------------------------------------------------------------
+            # Repeated behavioral identity
+            # ------------------------------------------------------------------
+            if pattern_key in self._pattern_index:
+                existing_pattern_id = self._pattern_index[pattern_key]
 
-            if existing_pattern_id is not None:
                 if pattern_id in self._recorded_occurrence_ids:
                     return True
 
-                result = self._record_repeated_behavior(
+                # Perform the repeated-behavior operation.
+                #
+                # This must complete successfully before recording the
+                # occurrence as processed.
+                success = self._record_repeated_behavior(
                     existing_pattern_id,
                     pattern,
                 )
 
-                if result:
-                    self._recorded_occurrence_ids.add(
-                        pattern_id
-                    )
+                if not success:
+                    return False
 
-                return result
+                self._recorded_occurrence_ids.add(pattern_id)
 
-            self._patterns[
-                pattern_id
-            ] = copy.deepcopy(pattern)
+                return True
 
-            self._pattern_index[
-                pattern_key
-            ] = pattern_id
+            # ------------------------------------------------------------------
+            # New behavioral identity
+            # ------------------------------------------------------------------
+            stored_pattern = copy.deepcopy(pattern)
 
-            self._create_behavioral_knowledge(
+            # Create knowledge before publishing the new repository state.
+            #
+            # If this fails, no repository structures have been modified yet.
+            knowledge = self._create_behavioral_knowledge(
                 pattern_id,
-                pattern,
+                stored_pattern,
                 pattern_key,
             )
 
-            self._recorded_pattern_ids.add(
-                pattern_id
-            )
+            if knowledge is None:
+                return False
+
+            # Publish the new state only after every required operation above
+            # has succeeded.
+            self._patterns[pattern_id] = stored_pattern
+            self._pattern_index[pattern_key] = pattern_id
+            self._knowledge[knowledge.knowledge_id] = knowledge
+            self._recorded_pattern_ids.add(pattern_id)
 
             return True
 
@@ -454,6 +461,10 @@ class FinalPatternRepository:
     ) -> BehavioralKnowledge:
         """
         Create the initial knowledge aggregate for a new behavior.
+
+        This method creates the knowledge object but does not insert it
+        into the repository's knowledge store. The caller is responsible
+        for insertion to ensure atomic state publication.
         """
 
         knowledge_id = (
@@ -470,10 +481,6 @@ class FinalPatternRepository:
             last_seen=pattern.created_at,
         )
 
-        self._knowledge[
-            knowledge_id
-        ] = knowledge
-
         return knowledge
 
     def _record_repeated_behavior(
@@ -484,6 +491,10 @@ class FinalPatternRepository:
         """
         Strengthen the existing behavioral knowledge without mutating
         the historical FinalPattern.
+
+        This method updates the knowledge in place, which is safe
+        for repeated behavior recording since the knowledge record
+        already exists and is being strengthened.
         """
 
         knowledge_id = (
