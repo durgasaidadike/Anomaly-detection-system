@@ -298,13 +298,7 @@ class BehaviorAnalyzer:
         events = self._get_events(session)
 
         if not events:
-            return [
-                {
-                    "signal_type": "EMPTY_SESSION",
-                    "value": True,
-                    "description": "Session contains no events.",
-                }
-            ]
+            return []
 
         signals: List[Dict[str, Any]] = []
 

@@ -74,7 +74,7 @@ def test_empty_session():
     assert result["session_id"] == "test-session-001"
     assert result["behavioral_context"]["event_count"] == 0
     assert result["behavioral_context"]["session_state"] == "EMPTY"
-    assert result["behavioral_signals"][0]["signal_type"] == "EMPTY_SESSION"
+    assert result["behavioral_signals"] == []
     assert result["session_behavior_summary"]["event_count"] == 0
 
     print("\n========== EMPTY SESSION TEST ==========")
