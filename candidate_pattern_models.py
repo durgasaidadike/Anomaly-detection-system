@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -186,7 +186,9 @@ class CandidatePattern:
         self.metadata.status = PatternStatus.FINALIZING
         self.metadata.complete = True
         self.metadata.finalized_at = (
-            finalized_at if finalized_at is not None else datetime.now()
+            finalized_at
+            if finalized_at is not None
+            else datetime.now(timezone.utc)
         )
 
     def mark_completed(self) -> None:

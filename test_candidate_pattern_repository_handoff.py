@@ -921,3 +921,186 @@ def test_repeated_behavior_occurrence_registration_failure_is_atomic(
     )
 
     assert repository.validate_integrity() is True
+
+
+def test_repeated_behavior_failed_attempt_can_be_retried_once(
+    monkeypatch,
+):
+    start = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    repository = FinalPatternRepository()
+    manager = build_manager_with_repository(repository)
+
+    first_session_id = (
+        "repository-retry-after-failure-001"
+    )
+
+    populate_candidate(
+        manager,
+        first_session_id,
+        start,
+    )
+
+    manager.completeSession(
+        first_session_id,
+        session_end_time=start + timedelta(seconds=5),
+    )
+
+    finalized_candidate = manager.finalizePattern(
+        first_session_id
+    )
+
+    assert finalized_candidate is not None
+
+    stored_pattern = repository.get_all()[0]
+
+    knowledge_before = repository.find_knowledge(
+        stored_pattern
+    )
+
+    assert knowledge_before is not None
+
+    occurrence_count_before = (
+        knowledge_before.occurrence_count
+    )
+
+    repeated_pattern = replace(
+        stored_pattern,
+        pattern_id=(
+            f"{stored_pattern.pattern_id}-retry"
+        ),
+        created_at=start + timedelta(minutes=1),
+    )
+
+    original_occurrence_ids = set(
+        repository._recorded_occurrence_ids
+    )
+
+    class FailOnceOccurrenceSet(set):
+        def __init__(self, values):
+            super().__init__(values)
+            self.failed = False
+
+        def add(self, value):
+            if not self.failed:
+                self.failed = True
+                raise RuntimeError(
+                    "forced one-time occurrence registration failure"
+                )
+
+            return super().add(value)
+
+    occurrence_ids = FailOnceOccurrenceSet(
+        original_occurrence_ids
+    )
+
+    monkeypatch.setattr(
+        repository,
+        "_recorded_occurrence_ids",
+        occurrence_ids,
+    )
+
+    # ---------------------------------------------------------------
+    # Attempt 1: forced failure
+    # ---------------------------------------------------------------
+
+    first_result = repository.store(
+        repeated_pattern
+    )
+
+    assert first_result is False
+
+    knowledge_after_failure = (
+        repository.find_knowledge(
+            stored_pattern
+        )
+    )
+
+    assert knowledge_after_failure is not None
+
+    assert (
+        knowledge_after_failure.occurrence_count
+        == occurrence_count_before
+    )
+
+    assert (
+        repeated_pattern.pattern_id
+        not in repository._recorded_occurrence_ids
+    )
+
+    assert repository.validate_integrity() is True
+
+    # ---------------------------------------------------------------
+    # Attempt 2: same occurrence must succeed
+    # ---------------------------------------------------------------
+
+    assert (
+        repeated_pattern.pattern_id
+        not in repository._recorded_occurrence_ids
+    )
+
+    second_result = repository.store(
+        repeated_pattern
+    )
+
+    assert second_result is True
+
+    assert (
+        repeated_pattern.pattern_id
+        in repository._recorded_occurrence_ids
+    )
+
+    knowledge_after_retry = (
+        repository.find_knowledge(
+            stored_pattern
+        )
+    )
+
+    assert knowledge_after_retry is not None
+
+    assert (
+        knowledge_after_retry.occurrence_count
+        == occurrence_count_before + 1
+    )
+
+    assert (
+        repeated_pattern.pattern_id
+        in repository._recorded_occurrence_ids
+    )
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.validate_integrity() is True
+
+    # ---------------------------------------------------------------
+    # Attempt 3: same occurrence must be idempotent
+    # ---------------------------------------------------------------
+
+    third_result = repository.store(
+        repeated_pattern
+    )
+
+    assert third_result is True
+
+    knowledge_after_duplicate = (
+        repository.find_knowledge(
+            stored_pattern
+        )
+    )
+
+    assert knowledge_after_duplicate is not None
+
+    assert (
+        knowledge_after_duplicate.occurrence_count
+        == occurrence_count_before + 1
+    )
+
+    assert repository.validate_integrity() is True

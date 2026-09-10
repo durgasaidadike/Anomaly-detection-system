@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from candidate_pattern_models import (
@@ -51,6 +51,30 @@ class CandidatePatternManager:
                 "session_id cannot be empty"
             )
 
+    @staticmethod
+    def _normalize_timestamp(
+        timestamp: datetime,
+    ) -> datetime:
+        """
+        Normalize a datetime to a UTC-aware representation.
+
+        Naive datetimes are interpreted as UTC.
+        Timezone-aware datetimes are converted to UTC.
+        """
+        if not isinstance(timestamp, datetime):
+            raise TypeError(
+                "Timestamp must be a datetime"
+            )
+
+        if timestamp.tzinfo is None:
+            return timestamp.replace(
+                tzinfo=timezone.utc
+            )
+
+        return timestamp.astimezone(
+            timezone.utc
+        )
+
     def createPattern(
         self,
         session_id: str,
@@ -67,7 +91,11 @@ class CandidatePatternManager:
             return self._active_patterns[session_id]
 
         if session_start_time is None:
-            session_start_time = datetime.now()
+            session_start_time = datetime.now(timezone.utc)
+        else:
+            session_start_time = self._normalize_timestamp(
+                session_start_time
+            )
 
         pattern = CandidatePattern(
             session_id=session_id,
@@ -250,20 +278,28 @@ class CandidatePatternManager:
                 observation
             )
 
+            accepted_observation = copy.deepcopy(
+                observation
+            )
+
+            accepted_observation["timestamp"] = (
+                self._normalize_timestamp(
+                    accepted_observation["timestamp"]
+                )
+            )
+
             if not self._is_chronologically_valid(
                 pattern,
-                observation,
+                accepted_observation,
             ):
                 return pattern
 
-            # Capture the complete state before any mutation occurs.
             previous_state = copy.deepcopy(pattern)
 
-            # Detach caller-owned mutable inputs before they become
-            # part of the Candidate Pattern's internal state.
-            accepted_observation = copy.deepcopy(observation)
             accepted_context = copy.deepcopy(context)
-            accepted_relationships = copy.deepcopy(relationships)
+            accepted_relationships = copy.deepcopy(
+                relationships
+            )
 
             pattern.add_observation(
                 accepted_observation
@@ -430,7 +466,11 @@ class CandidatePatternManager:
             return pattern
 
         if session_end_time is None:
-            session_end_time = datetime.now()
+            session_end_time = datetime.now(timezone.utc)
+        else:
+            session_end_time = self._normalize_timestamp(
+                session_end_time
+            )
 
         if (
             pattern.session_start_time is not None

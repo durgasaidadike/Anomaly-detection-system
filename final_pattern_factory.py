@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from candidate_pattern_models import CandidatePattern
@@ -22,7 +22,7 @@ class FinalPatternFactory:
             user_id=pattern.user_id,
             created_at=(
                 pattern.metadata.finalized_at
-                or datetime.now()
+                or datetime.now(timezone.utc)
             ),
             observations=[
                 dict(observation)

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import copy
 import pytest
 
@@ -25,7 +25,7 @@ def complete_session_for_finalization(
 def test_create_pattern():
     manager = CandidatePatternManager()
 
-    start_time = datetime.now()
+    start_time = datetime.now(timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-001",
@@ -102,7 +102,7 @@ def test_update_pattern_adds_observation():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     pattern = manager.updatePattern(
@@ -123,12 +123,12 @@ def test_update_pattern_accumulates_observations():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern("session-001", first)
@@ -147,7 +147,7 @@ def test_update_pattern_updates_context():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     context = {
@@ -173,12 +173,12 @@ def test_update_pattern_updates_latest_context():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -348,7 +348,7 @@ def test_duplicate_observation_is_ignored():
 
     manager.createPattern(session_id="session-001")
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
 
     observation = {
         "operation_type": "CREATE",
@@ -369,7 +369,7 @@ def test_update_unknown_session_returns_none():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     pattern = manager.updatePattern(
@@ -387,7 +387,7 @@ def test_empty_observation_does_not_corrupt_pattern():
 
     valid_observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -413,12 +413,12 @@ def test_sessions_remain_isolated_during_updates():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "DELETE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern("session-001", first)
@@ -454,7 +454,7 @@ def test_freeze_pattern_marks_pattern_interrupted():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -504,12 +504,12 @@ def test_freeze_preserves_latest_valid_observations():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern("session-001", first)
@@ -552,7 +552,7 @@ def test_finalize_pattern_completes_valid_pattern():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -598,7 +598,7 @@ def test_finalize_interrupted_pattern_is_rejected():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -639,12 +639,12 @@ def test_finalize_preserves_latest_valid_observations():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -704,7 +704,7 @@ def test_reset_preserves_returned_pattern_object():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -761,7 +761,7 @@ def test_reset_does_not_clear_pattern_data():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -787,7 +787,7 @@ def test_completed_pattern_cannot_be_updated():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -807,7 +807,7 @@ def test_completed_pattern_cannot_be_updated():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -829,7 +829,7 @@ def test_interrupted_pattern_cannot_be_updated():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -846,7 +846,7 @@ def test_interrupted_pattern_cannot_be_updated():
 
     second = {
         "operation_type": "DELETE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -868,7 +868,7 @@ def test_finalize_requires_explicit_session_completion():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -894,8 +894,16 @@ def test_finalize_requires_explicit_session_completion():
 def test_explicit_session_completion_allows_finalization():
     manager = CandidatePatternManager()
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
-    end_time = datetime(2026, 1, 1, 10, 5, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+    end_time = datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc)
 
     manager.createPattern(
         session_id="session-finalization-002",
@@ -942,7 +950,7 @@ def test_initializing_pattern_can_be_updated():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -962,7 +970,7 @@ def test_learning_pattern_can_continue_updates():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern("session-001", first)
@@ -974,7 +982,7 @@ def test_learning_pattern_can_continue_updates():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern("session-001", second)
@@ -991,12 +999,12 @@ def test_out_of_order_observation_is_rejected():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     earlier = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -1019,7 +1027,7 @@ def test_equal_timestamp_observation_is_allowed():
 
     manager.createPattern(session_id="session-001")
 
-    timestamp = datetime(2026, 1, 1, 10, 0, 0)
+    timestamp = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
     first = {
         "operation_type": "CREATE",
@@ -1057,15 +1065,15 @@ def test_chronological_order_is_preserved():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 10, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -1098,7 +1106,7 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -1116,7 +1124,7 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
 
     invalid_observation = {
         "operation_type": "DELETE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -1140,7 +1148,7 @@ def test_update_builds_operational_characteristics():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     pattern = manager.updatePattern(
@@ -1173,19 +1181,19 @@ def test_operational_characteristics_accumulate_operation_types():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
         {
             "operation_type": "CREATE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
     ]
 
@@ -1220,7 +1228,7 @@ def test_operational_characteristics_handle_missing_operation_type():
     )
 
     observation = {
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
         "signal": "HIGH_ACTIVITY",
     }
 
@@ -1247,7 +1255,7 @@ def test_duplicate_observation_does_not_change_operational_characteristics():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -1287,6 +1295,7 @@ def test_update_builds_temporal_characteristics():
         10,
         0,
         0,
+        tzinfo=timezone.utc,
     )
 
     observation = {
@@ -1322,6 +1331,7 @@ def test_temporal_characteristics_calculate_duration():
         10,
         0,
         0,
+        tzinfo=timezone.utc,
     )
 
     second_timestamp = datetime(
@@ -1331,6 +1341,7 @@ def test_temporal_characteristics_calculate_duration():
         10,
         0,
         12,
+        tzinfo=timezone.utc,
     )
 
     manager.updatePattern(
@@ -1372,6 +1383,7 @@ def test_temporal_characteristics_handle_out_of_order_timestamps():
         10,
         0,
         10,
+        tzinfo=timezone.utc,
     )
 
     earlier_timestamp = datetime(
@@ -1381,6 +1393,7 @@ def test_temporal_characteristics_handle_out_of_order_timestamps():
         10,
         0,
         3,
+        tzinfo=timezone.utc,
     )
 
     later_timestamp = datetime(
@@ -1390,6 +1403,7 @@ def test_temporal_characteristics_handle_out_of_order_timestamps():
         10,
         0,
         20,
+        tzinfo=timezone.utc,
     )
 
     manager.updatePattern(
@@ -1459,7 +1473,7 @@ def test_update_builds_sequential_characteristics():
         session_id="session-001",
     )
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
 
     observation = {
         "operation_type": "CREATE",
@@ -1491,15 +1505,15 @@ def test_sequential_characteristics_preserve_operation_order():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         },
     ]
 
@@ -1534,7 +1548,7 @@ def test_duplicate_observation_does_not_change_sequence():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -1566,7 +1580,7 @@ def test_sequential_characteristics_ignore_missing_operation_type():
     )
 
     observation = {
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
         "signal": "HIGH_ACTIVITY",
     }
 
@@ -1594,7 +1608,7 @@ def test_update_builds_contextual_characteristics():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context=context,
     )
@@ -1611,7 +1625,7 @@ def test_contextual_characteristics_evolve_incrementally():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "directory": "/workspace",
@@ -1623,7 +1637,7 @@ def test_contextual_characteristics_evolve_incrementally():
         "session-1",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         context={
             "directory": "/workspace/project",
@@ -1646,7 +1660,7 @@ def test_missing_context_does_not_modify_contextual_characteristics():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -1660,7 +1674,7 @@ def test_duplicate_observation_does_not_change_contextual_characteristics():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     context = {
@@ -1701,7 +1715,7 @@ def test_update_builds_relationship_characteristics():
         "session-1",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         relationships=[relationship],
     )
@@ -1733,7 +1747,7 @@ def test_multiple_relationships_are_preserved():
         "session-1",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
         relationships=relationships,
     )
@@ -1754,12 +1768,12 @@ def test_duplicate_relationships_are_not_repeated():
 
     observation_1 = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     observation_2 = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -1788,7 +1802,7 @@ def test_invalid_relationship_entries_are_ignored():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         relationships=[
             None,
@@ -1803,7 +1817,15 @@ def test_invalid_relationship_entries_are_ignored():
 def test_update_builds_session_characteristics():
     manager = CandidatePatternManager()
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     manager.createPattern(
         "session-1",
@@ -1839,12 +1861,12 @@ def test_session_characteristics_update_observation_count():
 
     first_observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second_observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -1869,7 +1891,7 @@ def test_duplicate_observation_does_not_change_session_count():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -1937,7 +1959,7 @@ def test_get_pattern_snapshot_returns_current_pattern():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -1961,7 +1983,7 @@ def test_pattern_snapshot_is_independent_from_active_pattern():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -1970,7 +1992,7 @@ def test_pattern_snapshot_is_independent_from_active_pattern():
     snapshot.timeline.observations.append(
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         }
     )
 
@@ -1989,7 +2011,7 @@ def test_pattern_snapshot_nested_characteristics_are_independent():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "directory": "/workspace",
@@ -2032,7 +2054,7 @@ def test_pattern_snapshot_preserves_relationships():
         "session-1",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         relationships=[relationship],
     )
@@ -2068,7 +2090,7 @@ def test_interrupted_pattern_cannot_be_finalized():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2100,7 +2122,7 @@ def test_finalization_preserves_learned_characteristics():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "directory": "/workspace",
@@ -2111,7 +2133,7 @@ def test_finalization_preserves_learned_characteristics():
         "session-1",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         relationships=[relationship],
     )
@@ -2148,7 +2170,7 @@ def test_completed_pattern_cannot_be_modified():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2159,7 +2181,7 @@ def test_completed_pattern_cannot_be_modified():
         "session-1",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2177,7 +2199,7 @@ def test_repeated_finalization_returns_completed_pattern():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2214,7 +2236,7 @@ def test_finalized_pattern_is_handed_off():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2264,7 +2286,7 @@ def test_interrupted_pattern_is_not_handed_off():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2306,7 +2328,7 @@ def test_failed_handoff_does_not_corrupt_completed_pattern():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2340,7 +2362,7 @@ def test_handler_returning_false_is_failed_handoff():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2365,7 +2387,7 @@ def test_finalization_without_handler_still_succeeds():
         "session-1",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2405,7 +2427,7 @@ def test_manager_can_handoff_to_final_pattern_repository_adapter():
         "session-001",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 9, 4, 10, 0, 0),
+            "timestamp": datetime(2026, 9, 4, 10, 0, 0, tzinfo=timezone.utc),
             "file_extension": ".py",
             "directory": "/project",
         },
@@ -2435,12 +2457,12 @@ def test_get_behavioral_summary_returns_current_state():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern("session-001", first)
@@ -2464,11 +2486,11 @@ def test_get_behavioral_summary_returns_current_state():
     assert summary["sequential_characteristics"] == [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -2482,7 +2504,7 @@ def test_get_behavioral_summary_is_detached_from_active_pattern():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -2517,7 +2539,7 @@ def test_get_behavioral_summary_is_detached_from_active_pattern():
     assert pattern.sequential_characteristics == [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         }
     ]
 
@@ -2544,7 +2566,7 @@ def test_get_pattern_metadata_reflects_current_lifecycle():
         "session-001",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -2568,7 +2590,7 @@ def test_get_evaluation_snapshot_is_read_only():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -2647,7 +2669,7 @@ def test_update_detaches_observation_from_caller():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         "details": {
             "path": "/workspace/a.txt",
             "attributes": {
@@ -2696,7 +2718,7 @@ def test_update_detaches_context_from_caller():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -2732,7 +2754,7 @@ def test_update_detaches_relationships_from_caller():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     relationships = [
@@ -2776,9 +2798,9 @@ def test_temporal_characteristics_track_operation_intervals():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 2),
-        datetime(2026, 1, 1, 10, 0, 5),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 5, tzinfo=timezone.utc),
     ]
 
     for index, timestamp in enumerate(timestamps):
@@ -2897,9 +2919,9 @@ def test_temporal_characteristics_track_continuous_activity():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 2),
-        datetime(2026, 1, 1, 10, 0, 4),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 4, tzinfo=timezone.utc),
     ]
 
     for timestamp in timestamps:
@@ -2980,10 +3002,10 @@ def test_operation_frequency_tracks_accumulated_counts():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 1),
-        datetime(2026, 1, 1, 10, 0, 2),
-        datetime(2026, 1, 1, 10, 0, 3),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 3, tzinfo=timezone.utc),
     ]
 
     operations = [
@@ -3149,7 +3171,7 @@ def test_duplicate_observation_does_not_change_operation_distribution():
     observation = {
         "operation_type": "CREATE",
         "timestamp": datetime(
-            2026, 1, 1, 10, 0, 0
+            2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
         ),
     }
 
@@ -3255,9 +3277,9 @@ def test_context_refinement_tracks_repeated_same_value():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 1),
-        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
     ]
 
     for timestamp in timestamps:
@@ -3443,11 +3465,11 @@ def test_complete_session_records_end_time_and_duration():
     manager = CandidatePatternManager()
 
     start_time = datetime(
-        2026, 1, 1, 10, 0, 0
+        2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
     )
 
     end_time = datetime(
-        2026, 1, 1, 10, 5, 30
+        2026, 1, 1, 10, 5, 30, tzinfo=timezone.utc
     )
 
     pattern = manager.createPattern(
@@ -3561,11 +3583,11 @@ def test_finalize_after_session_completion():
     manager = CandidatePatternManager()
 
     start_time = datetime(
-        2026, 1, 1, 10, 0, 0
+        2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
     )
 
     end_time = datetime(
-        2026, 1, 1, 10, 1, 0
+        2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc
     )
 
     manager.createPattern(
@@ -3578,7 +3600,7 @@ def test_finalize_after_session_completion():
         {
             "operation_type": "CREATE",
             "timestamp": datetime(
-                2026, 1, 1, 10, 0, 1
+                2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc
             ),
         },
     )
@@ -3611,11 +3633,11 @@ def test_behavioral_summary_includes_session_information():
     manager = CandidatePatternManager()
 
     start_time = datetime(
-        2026, 1, 1, 10, 0, 0
+        2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
     )
 
     end_time = datetime(
-        2026, 1, 1, 10, 2, 0
+        2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc
     )
 
     manager.createPattern(
@@ -3629,7 +3651,7 @@ def test_behavioral_summary_includes_session_information():
         {
             "operation_type": "CREATE",
             "timestamp": datetime(
-                2026, 1, 1, 10, 0, 1
+                2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc
             ),
         },
     )
@@ -3665,11 +3687,11 @@ def test_pattern_metadata_includes_session_information():
     manager = CandidatePatternManager()
 
     start_time = datetime(
-        2026, 1, 1, 10, 0, 0
+        2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
     )
 
     end_time = datetime(
-        2026, 1, 1, 10, 3, 0
+        2026, 1, 1, 10, 3, 0, tzinfo=timezone.utc
     )
 
     manager.createPattern(
@@ -3682,7 +3704,7 @@ def test_pattern_metadata_includes_session_information():
         {
             "operation_type": "MODIFY",
             "timestamp": datetime(
-                2026, 1, 1, 10, 0, 1
+                2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc
             ),
         },
     )
@@ -3718,11 +3740,11 @@ def test_pattern_snapshot_contains_session_completion_state():
     manager = CandidatePatternManager()
 
     start_time = datetime(
-        2026, 1, 1, 10, 0, 0
+        2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc
     )
 
     end_time = datetime(
-        2026, 1, 1, 10, 4, 0
+        2026, 1, 1, 10, 4, 0, tzinfo=timezone.utc
     )
 
     manager.createPattern(
@@ -3735,7 +3757,7 @@ def test_pattern_snapshot_contains_session_completion_state():
         {
             "operation_type": "CREATE",
             "timestamp": datetime(
-                2026, 1, 1, 10, 0, 1
+                2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc
             ),
         },
     )
@@ -4261,7 +4283,7 @@ def test_lifecycle_initializing_to_learning():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     updated = manager.updatePattern(
@@ -4282,7 +4304,7 @@ def test_lifecycle_learning_to_evaluating():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4307,7 +4329,7 @@ def test_lifecycle_evaluating_to_learning():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4336,7 +4358,7 @@ def test_update_after_evaluation_returns_pattern_to_learning():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4352,7 +4374,7 @@ def test_update_after_evaluation_returns_pattern_to_learning():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     updated = manager.updatePattern(
@@ -4389,7 +4411,7 @@ def test_interrupted_pattern_cannot_resume_learning():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4419,7 +4441,7 @@ def test_interrupted_pattern_cannot_enter_evaluation():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4443,7 +4465,15 @@ def test_interrupted_pattern_cannot_enter_evaluation():
 def test_interrupted_pattern_cannot_complete():
     manager = CandidatePatternManager()
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     pattern = manager.createPattern(
         session_id="session-lifecycle-008",
@@ -4466,7 +4496,7 @@ def test_interrupted_pattern_cannot_complete():
 
     result = manager.completeSession(
         "session-lifecycle-008",
-        datetime(2026, 1, 1, 11, 0, 0),
+        datetime(2026, 1, 1, 11, 0, 0, tzinfo=timezone.utc),
     )
 
     assert result is pattern
@@ -4479,7 +4509,15 @@ def test_interrupted_pattern_cannot_complete():
 def test_interrupted_pattern_cannot_finalize():
     manager = CandidatePatternManager()
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     pattern = manager.createPattern(
         session_id="session-lifecycle-009",
@@ -4519,7 +4557,7 @@ def test_completed_pattern_cannot_return_to_learning():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4555,7 +4593,7 @@ def test_completed_pattern_cannot_reenter_evaluation():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4591,7 +4629,7 @@ def test_completed_pattern_does_not_accept_new_observations():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4610,7 +4648,7 @@ def test_completed_pattern_does_not_accept_new_observations():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -4632,7 +4670,7 @@ def test_freeze_preserves_latest_valid_state_after_evaluation():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4650,7 +4688,7 @@ def test_freeze_preserves_latest_valid_state_after_evaluation():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4681,7 +4719,7 @@ def test_pattern_snapshot_is_detached():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4702,7 +4740,7 @@ def test_pattern_snapshot_is_detached():
     snapshot.timeline.observations.append(
         {
             "operation_type": "DELETE",
-            "timestamp": datetime.now(),
+            "timestamp": datetime.now(timezone.utc),
         }
     )
 
@@ -4726,7 +4764,7 @@ def test_behavioral_summary_is_detached():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4775,12 +4813,12 @@ def test_behavioral_summary_nested_data_is_detached():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4822,7 +4860,7 @@ def test_pattern_metadata_is_detached():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4857,7 +4895,7 @@ def test_evaluation_snapshot_is_detached():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4932,7 +4970,7 @@ def test_snapshot_read_does_not_change_active_pattern_status():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime.now(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     manager.updatePattern(
@@ -4974,7 +5012,7 @@ def test_duplicate_signal_does_not_change_operational_state():
         session_id="session-integrity-001",
     )
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
 
     observation = {
         "operation_type": "CREATE",
@@ -5030,7 +5068,7 @@ def test_duplicate_signal_does_not_create_duplicate_sequence_entry():
         session_id="session-integrity-002",
     )
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
 
     observation = {
         "operation_type": "MODIFY",
@@ -5059,7 +5097,7 @@ def test_duplicate_signal_does_not_create_duplicate_sequence_entry():
 def test_older_observation_is_rejected():
     manager = CandidatePatternManager()
 
-    start = datetime(2026, 1, 1, 10, 0, 0)
+    start = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-integrity-003",
@@ -5068,12 +5106,12 @@ def test_older_observation_is_rejected():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0, tzinfo=timezone.utc),
     }
 
     older = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5094,7 +5132,7 @@ def test_older_observation_is_rejected():
 def test_older_observation_does_not_modify_characteristics():
     manager = CandidatePatternManager()
 
-    start = datetime(2026, 1, 1, 10, 0, 0)
+    start = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-integrity-004",
@@ -5103,7 +5141,7 @@ def test_older_observation_does_not_modify_characteristics():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5126,7 +5164,7 @@ def test_older_observation_does_not_modify_characteristics():
 
     older = {
         "operation_type": "DELETE",
-        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5155,7 +5193,7 @@ def test_older_observation_does_not_modify_characteristics():
 def test_equal_timestamp_is_allowed_in_chronological_order():
     manager = CandidatePatternManager()
 
-    timestamp = datetime(2026, 1, 1, 12, 0, 0)
+    timestamp = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-integrity-005",
@@ -5198,15 +5236,15 @@ def test_chronological_order_is_preserved_across_multiple_updates():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 15, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 15, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -5234,17 +5272,17 @@ def test_rejected_older_observation_does_not_change_observation_count():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 10, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 10, 0, tzinfo=timezone.utc),
     }
 
     older = {
         "operation_type": "DELETE",
-        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5275,7 +5313,7 @@ def test_rejected_older_observation_does_not_change_context():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5288,7 +5326,7 @@ def test_rejected_older_observation_does_not_change_context():
 
     older = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 9, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5321,12 +5359,12 @@ def test_duplicate_signal_after_other_observations_is_still_ignored():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 5, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5361,15 +5399,15 @@ def test_operational_characteristics_accumulate_incrementally():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
@@ -5405,7 +5443,7 @@ def test_operation_distribution_refines_with_new_observations():
         "session-growth-002",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -5419,7 +5457,7 @@ def test_operation_distribution_refines_with_new_observations():
         "session-growth-002",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -5453,15 +5491,15 @@ def test_temporal_characteristics_grow_with_observations():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -5474,11 +5512,11 @@ def test_temporal_characteristics_grow_with_observations():
     temporal = pattern.temporal_characteristics
 
     assert temporal["first_observation_time"] == (
-        datetime(2026, 1, 1, 10, 0, 0)
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
     )
 
     assert temporal["last_observation_time"] == (
-        datetime(2026, 1, 1, 10, 3, 0)
+        datetime(2026, 1, 1, 10, 3, 0, tzinfo=timezone.utc)
     )
 
     assert temporal["time_between_operations"] == [
@@ -5501,19 +5539,19 @@ def test_sequential_characteristics_preserve_behavioral_order():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 3, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 3, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -5539,10 +5577,10 @@ def test_sequential_characteristics_preserve_behavioral_order():
         item["timestamp"]
         for item in sequence
     ] == [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
-        datetime(2026, 1, 1, 10, 2, 0),
-        datetime(2026, 1, 1, 10, 3, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 3, 0, tzinfo=timezone.utc),
     ]
 
 
@@ -5557,7 +5595,7 @@ def test_context_refinement_preserves_latest_and_history():
         "session-growth-005",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/project-a",
@@ -5568,7 +5606,7 @@ def test_context_refinement_preserves_latest_and_history():
         "session-growth-005",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/project-b",
@@ -5579,7 +5617,7 @@ def test_context_refinement_preserves_latest_and_history():
         "session-growth-005",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/project-c",
@@ -5616,7 +5654,7 @@ def test_context_observation_count_refines_without_replacing_history():
         session_id="session-growth-006",
     )
 
-    timestamp = datetime(2026, 1, 1, 10, 0, 0)
+    timestamp = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
     manager.updatePattern(
         "session-growth-006",
@@ -5633,7 +5671,7 @@ def test_context_observation_count_refines_without_replacing_history():
         "session-growth-006",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         context={
             "environment": "development",
@@ -5676,7 +5714,7 @@ def test_relationship_characteristics_accumulate_without_duplicate_relationships
         "session-growth-007",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         relationships=[relationship],
     )
@@ -5685,7 +5723,7 @@ def test_relationship_characteristics_accumulate_without_duplicate_relationships
         "session-growth-007",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         relationships=[relationship],
     )
@@ -5716,7 +5754,7 @@ def test_multiple_relationships_are_preserved_in_observation_order():
         "session-growth-008",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         relationships=[
             first_relationship,
@@ -5742,7 +5780,7 @@ def test_session_characteristics_refine_as_pattern_grows():
         "session-growth-009",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -5754,7 +5792,7 @@ def test_session_characteristics_refine_as_pattern_grows():
         "session-growth-009",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -5792,12 +5830,12 @@ def test_candidate_pattern_growth_preserves_previous_knowledge():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -5877,7 +5915,15 @@ def test_final_pattern_handler_receives_completed_candidate():
         final_pattern_handler=handler,
     )
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     pattern = manager.createPattern(
         session_id="session-final-001",
@@ -5931,7 +5977,15 @@ def test_finalization_records_session_end_before_handoff():
         final_pattern_handler=handler,
     )
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     pattern = manager.createPattern(
         session_id="session-final-002",
@@ -5959,11 +6013,15 @@ def test_finalization_records_session_end_before_handoff():
 
     assert len(received) == 1
 
-    assert received[0]["session_end_time"] == explicit_end
+    assert received[0]["session_end_time"] == explicit_end.replace(
+        tzinfo=timezone.utc
+    )
     assert received[0]["duration"] == 1800.0
     assert received[0]["status"] == PatternStatus.COMPLETED
 
-    assert pattern.session_end_time == explicit_end
+    assert pattern.session_end_time == explicit_end.replace(
+        tzinfo=timezone.utc
+    )
     assert pattern.session_duration_seconds == 1800.0
 
 
@@ -6007,7 +6065,7 @@ def test_interrupted_candidate_pattern_never_reaches_handler():
         "session-final-004",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6040,7 +6098,7 @@ def test_handler_returning_false_does_not_corrupt_completed_pattern():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6073,7 +6131,15 @@ def test_handler_exception_does_not_corrupt_preexisting_behavior():
         final_pattern_handler=handler,
     )
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
 
     pattern = manager.createPattern(
         session_id="session-final-006",
@@ -6136,7 +6202,7 @@ def test_handoff_failure_does_not_remove_active_pattern():
         "session-final-007",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6187,14 +6253,16 @@ def test_explicit_session_completion_is_preserved_during_finalization():
         "session-final-008",
     )
 
-    assert pattern.session_end_time == end_time
+    assert pattern.session_end_time == end_time.replace(
+        tzinfo=timezone.utc
+    )
     assert pattern.session_duration_seconds == 4500.0
 
     assert (
         pattern.temporal_characteristics[
             "session_end_time"
         ]
-        == end_time
+        == end_time.replace(tzinfo=timezone.utc)
     )
 
     assert (
@@ -6223,7 +6291,7 @@ def test_finalization_is_idempotent_after_completion():
         "session-final-009",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6262,7 +6330,7 @@ def test_finalization_keeps_finalized_pattern_available_until_reset():
         "session-final-010",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6303,7 +6371,7 @@ def test_non_dict_observation_does_not_corrupt_pattern():
 
     valid = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6330,7 +6398,7 @@ def test_signal_without_timestamp_is_rejected_without_corruption():
 
     valid = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6361,7 +6429,7 @@ def test_raw_event_markers_are_rejected():
 
     valid = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6372,7 +6440,7 @@ def test_raw_event_markers_are_rejected():
     raw_event = {
         "event_type": "created",
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -6404,7 +6472,7 @@ def test_all_supported_raw_event_markers_are_rejected(
 
     valid = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6415,7 +6483,7 @@ def test_all_supported_raw_event_markers_are_rejected(
     invalid = {
         raw_marker: "raw-value",
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -6466,7 +6534,7 @@ def test_missing_session_start_time_uses_manager_timestamp():
 def test_end_time_before_start_time_is_rejected():
     manager = CandidatePatternManager()
 
-    start = datetime(2026, 1, 1, 10, 0, 0)
+    start = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-edge-006",
@@ -6485,7 +6553,7 @@ def test_end_time_before_start_time_is_rejected():
 
     result = manager.completeSession(
         "session-edge-006",
-        datetime(2026, 1, 1, 9, 0, 0),
+        datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc),
     )
 
     assert result is pattern
@@ -6507,12 +6575,12 @@ def test_failed_incremental_update_restores_complete_state():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6580,7 +6648,7 @@ def test_failed_first_update_leaves_no_partial_context_history():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -6622,7 +6690,7 @@ def test_failed_update_preserves_object_identity():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -6653,12 +6721,12 @@ def test_pattern_can_continue_after_a_failed_update():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6712,7 +6780,7 @@ def test_freeze_preserves_state_after_failed_update():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6736,7 +6804,7 @@ def test_freeze_preserves_state_after_failed_update():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -6781,7 +6849,7 @@ def test_session_observation_count_tracks_pattern_growth():
         "session-metrics-001",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6793,7 +6861,7 @@ def test_session_observation_count_tracks_pattern_growth():
         "session-metrics-001",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6812,15 +6880,15 @@ def test_operation_diversity_counts_unique_operation_types():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
@@ -6872,21 +6940,21 @@ def test_behavioral_density_is_derived_from_activity():
 
     pattern = manager.createPattern(
         session_id="session-metrics-004",
-        session_start_time=datetime(2026, 1, 1, 10, 0, 0),
+        session_start_time=datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     )
 
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -6909,14 +6977,14 @@ def test_behavioral_density_changes_when_session_activity_changes():
 
     pattern = manager.createPattern(
         session_id="session-metrics-005",
-        session_start_time=datetime(2026, 1, 1, 10, 0, 0),
+        session_start_time=datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     )
 
     manager.updatePattern(
         "session-metrics-005",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6928,7 +6996,7 @@ def test_behavioral_density_changes_when_session_activity_changes():
         "session-metrics-005",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -6947,9 +7015,9 @@ def test_behavioral_consistency_exists_for_multiple_operations():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
-        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 3, 0),
     ]
 
@@ -6978,9 +7046,9 @@ def test_consistent_intervals_produce_high_consistency():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
-        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 3, 0),
     ]
 
@@ -7008,9 +7076,9 @@ def test_irregular_intervals_reduce_behavioral_consistency():
     )
 
     timestamps = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
-        datetime(2026, 1, 1, 10, 5, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 6, 0),
     ]
 
@@ -7041,7 +7109,7 @@ def test_task_complexity_contains_session_level_dimensions():
         "session-metrics-009",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         relationships=[
             {
@@ -7070,7 +7138,7 @@ def test_task_complexity_refines_as_behavior_diversifies():
         "session-metrics-010",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -7084,7 +7152,7 @@ def test_task_complexity_refines_as_behavior_diversifies():
         "session-metrics-010",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         relationships=[
             {
@@ -7118,8 +7186,8 @@ def test_first_and_last_observation_times_are_tracked():
         session_id="session-temporal-001",
     )
 
-    first_time = datetime(2026, 1, 1, 10, 0, 0)
-    last_time = datetime(2026, 1, 1, 10, 5, 0)
+    first_time = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    last_time = datetime(2026, 1, 1, 10, 5, 0, tzinfo=timezone.utc)
 
     manager.updatePattern(
         "session-temporal-001",
@@ -7151,9 +7219,9 @@ def test_operation_intervals_are_incrementally_recorded():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 0, 30),
-        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
     ]
 
     for timestamp in times:
@@ -7187,8 +7255,8 @@ def test_idle_interval_is_recorded_when_gap_exceeds_threshold():
         session_id="session-temporal-003",
     )
 
-    first_time = datetime(2026, 1, 1, 10, 0, 0)
-    second_time = datetime(2026, 1, 1, 10, 2, 0)
+    first_time = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    second_time = datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc)
 
     manager.updatePattern(
         "session-temporal-003",
@@ -7219,7 +7287,7 @@ def test_short_interval_is_not_classified_as_idle():
         session_id="session-temporal-004",
     )
 
-    first_time = datetime(2026, 1, 1, 10, 0, 0)
+    first_time = datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
     second_time = datetime(2026, 1, 1, 10, 0, 30)
 
     manager.updatePattern(
@@ -7252,7 +7320,7 @@ def test_active_time_is_based_on_non_idle_intervals():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 0, 30),
         datetime(2026, 1, 1, 10, 2, 30),
     ]
@@ -7280,8 +7348,8 @@ def test_working_rhythm_tracks_interval_statistics():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 3, 0),
         datetime(2026, 1, 1, 10, 6, 0),
     ]
@@ -7313,9 +7381,9 @@ def test_burst_activity_is_detected_for_short_intervals():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 1),
-        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
     ]
 
     for timestamp in times:
@@ -7341,9 +7409,9 @@ def test_normal_activity_does_not_create_burst():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 1, 0),
-        datetime(2026, 1, 1, 10, 2, 0),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
     ]
 
     for timestamp in times:
@@ -7369,10 +7437,10 @@ def test_continuous_activity_is_tracked_for_close_operations():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 1),
-        datetime(2026, 1, 1, 10, 0, 2),
-        datetime(2026, 1, 1, 10, 0, 3),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 3, tzinfo=timezone.utc),
     ]
 
     for timestamp in times:
@@ -7397,9 +7465,9 @@ def test_idle_period_and_burst_can_coexist():
     )
 
     times = [
-        datetime(2026, 1, 1, 10, 0, 0),
-        datetime(2026, 1, 1, 10, 0, 1),
-        datetime(2026, 1, 1, 10, 0, 2),
+        datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, 10, 0, 2, tzinfo=timezone.utc),
         datetime(2026, 1, 1, 10, 2, 2),
         datetime(2026, 1, 1, 10, 2, 3),
     ]
@@ -7432,7 +7500,7 @@ def test_reset_releases_active_candidate_pattern():
         "session-reset-001",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -7469,7 +7537,7 @@ def test_reset_does_not_affect_other_active_sessions():
         "session-reset-002-b",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -7501,7 +7569,7 @@ def test_reset_releases_all_temporary_behavioral_state():
         "session-reset-003",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/project",
@@ -7543,7 +7611,7 @@ def test_same_session_id_after_reset_creates_fresh_pattern():
         "session-reset-004",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -7577,7 +7645,7 @@ def test_reset_after_finalization_allows_new_session_state():
         "session-reset-005",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -7623,7 +7691,7 @@ def test_finalized_pattern_state_does_not_leak_into_recreated_session():
         "session-reset-006",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/old-project",
@@ -7822,7 +7890,7 @@ def test_update_pattern_handles_invalid_session_id(
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     assert manager.updatePattern(
@@ -7914,7 +7982,7 @@ def test_non_dict_context_does_not_corrupt_update():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -7945,7 +8013,7 @@ def test_empty_context_is_safe():
 
     observation = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -7968,7 +8036,7 @@ def test_non_list_relationships_do_not_corrupt_update():
 
     observation = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -7991,7 +8059,7 @@ def test_empty_relationship_list_is_safe():
 
     observation = {
         "operation_type": "DELETE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -8013,7 +8081,7 @@ def test_valid_signal_with_only_timestamp_is_accepted():
     )
 
     observation = {
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         "signal": "behavior-observed",
     }
 
@@ -8035,7 +8103,7 @@ def test_valid_signal_without_operation_type_does_not_break_operational_metrics(
     )
 
     observation = {
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         "behavior": "activity-detected",
     }
 
@@ -8059,7 +8127,7 @@ def test_raw_event_marker_takes_precedence_over_other_valid_fields():
     )
 
     raw_event = {
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         "signal": "behavior-observed",
         "operation_type": "CREATE",
         "raw_event": {
@@ -8086,7 +8154,7 @@ def test_valid_session_remains_accessible_after_rejected_signal():
 
     invalid_signal = {
         "event_type": "created",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -8114,13 +8182,13 @@ def test_valid_signal_can_follow_rejected_signal():
         "session-contract-013",
         {
             "event_type": "created",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
     valid_signal = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     result = manager.updatePattern(
@@ -8139,8 +8207,16 @@ def test_valid_signal_can_follow_rejected_signal():
 def test_complete_candidate_pattern_invariant_set():
     manager = CandidatePatternManager()
 
-    start_time = datetime(2026, 1, 1, 10, 0, 0)
-    end_time = datetime(2026, 1, 1, 10, 10, 0)
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+    end_time = datetime(2026, 1, 1, 10, 10, 0, tzinfo=timezone.utc)
 
     pattern = manager.createPattern(
         session_id="session-final-check-001",
@@ -8155,7 +8231,7 @@ def test_complete_candidate_pattern_invariant_set():
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -8227,15 +8303,15 @@ def test_candidate_pattern_preserves_all_behavioral_dimensions_together():
     observations = [
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 2, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
         },
     ]
 
@@ -8308,7 +8384,7 @@ def test_rejected_update_preserves_every_behavioral_dimension():
 
     valid = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -8330,7 +8406,7 @@ def test_rejected_update_preserves_every_behavioral_dimension():
     invalid = {
         "event_type": "created",
         "operation_type": "DELETE",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -8361,7 +8437,7 @@ def test_read_views_and_finalization_do_not_change_active_behavior():
         "session-final-check-004",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8428,7 +8504,7 @@ def test_session_isolation_survives_full_lifecycle():
         "session-final-check-005-a",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8436,7 +8512,7 @@ def test_session_isolation_survives_full_lifecycle():
         "session-final-check-005-b",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8478,12 +8554,12 @@ def test_failed_update_then_successful_update_preserves_lifecycle():
 
     first = {
         "operation_type": "CREATE",
-        "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
     }
 
     second = {
         "operation_type": "MODIFY",
-        "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+        "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
     }
 
     manager.updatePattern(
@@ -8543,7 +8619,7 @@ def test_finalized_pattern_requires_explicit_reset_for_release():
         "session-final-check-007",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8578,7 +8654,7 @@ def test_reset_then_recreate_produces_clean_candidate_pattern():
         "session-final-check-008",
         {
             "operation_type": "CREATE",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
         context={
             "working_directory": "/old",
@@ -8647,7 +8723,7 @@ def test_interrupted_candidate_remains_frozen_until_reset():
         "session-final-check-010",
         {
             "operation_type": "MODIFY",
-            "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8661,7 +8737,7 @@ def test_interrupted_candidate_remains_frozen_until_reset():
         "session-final-check-010",
         {
             "operation_type": "DELETE",
-            "timestamp": datetime(2026, 1, 1, 10, 1, 0),
+            "timestamp": datetime(2026, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
         },
     )
 
@@ -8671,7 +8747,7 @@ def test_interrupted_candidate_remains_frozen_until_reset():
 
     manager.completeSession(
         "session-final-check-010",
-        datetime(2026, 1, 1, 11, 0, 0),
+        datetime(2026, 1, 1, 11, 0, 0, tzinfo=timezone.utc),
     )
 
     assert pattern.__dict__ == before
