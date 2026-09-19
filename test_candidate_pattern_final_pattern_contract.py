@@ -67,9 +67,9 @@ def build_completed_candidate():
         session_end_time=start + timedelta(seconds=5),
     )
 
-    manager.finalizePattern(session_id)
+    finalized = manager.finalizePattern(session_id)
 
-    return manager.getCurrentPattern(session_id)
+    return finalized
 
 
 def test_completed_candidate_can_become_final_pattern():

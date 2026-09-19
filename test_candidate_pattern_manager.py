@@ -695,7 +695,7 @@ def test_reset_unknown_session_returns_none():
     assert result is None
 
 
-def test_reset_preserves_returned_pattern_object():
+def test_reset_after_successful_finalization_is_idempotent():
     manager = CandidatePatternManager()
 
     manager.createPattern(
@@ -719,17 +719,19 @@ def test_reset_preserves_returned_pattern_object():
     )
 
     assert finalized is not None
+    assert finalized.metadata.status == PatternStatus.COMPLETED
+    assert finalized.metadata.complete is True
+    assert finalized.observation_count() == 1
 
+    # After successful finalization, the pattern is already removed from active registry
+    assert manager.getCurrentPattern("session-001") is None
+
+    # Calling resetPattern on a session that was already finalized returns None
     reset = manager.resetPattern(
         "session-001",
     )
 
-    assert reset is finalized
-    assert reset.metadata.status == PatternStatus.COMPLETED
-    assert reset.metadata.complete is True
-    assert reset.observation_count() == 1
-
-    assert manager.getCurrentPattern("session-001") is None
+    assert reset is None
 
 
 def test_reset_allows_new_candidate_pattern_for_same_session():
@@ -815,9 +817,11 @@ def test_completed_pattern_cannot_be_updated():
         second,
     )
 
-    assert result is finalized
-    assert result.observation_count() == 1
-    assert second not in result.timeline.observations
+    assert result is None
+    assert manager.getCurrentPattern("session-001") is None
+    assert finalized.metadata.complete is True
+    assert finalized.observation_count() == 1
+    assert second not in finalized.timeline.observations
 
 
 def test_interrupted_pattern_cannot_be_updated():
@@ -1121,6 +1125,8 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
     )
 
     assert pattern is not None
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
 
     invalid_observation = {
         "operation_type": "DELETE",
@@ -1132,11 +1138,9 @@ def test_rejected_lifecycle_update_preserves_latest_valid_state():
         invalid_observation,
     )
 
-    assert result is pattern
-    assert result.metadata.status == PatternStatus.COMPLETED
-    assert result.metadata.complete is True
-    assert result.observation_count() == 1
-    assert result.timeline.observations[0] == observation
+    assert result is None
+    assert manager.getCurrentPattern("session-001") is None
+    assert pattern.metadata.complete is True
 
 
 def test_update_builds_operational_characteristics():
@@ -2175,7 +2179,7 @@ def test_completed_pattern_cannot_be_modified():
     )
 
     manager.completeSession("session-1")
-    manager.finalizePattern("session-1")
+    finalized = manager.finalizePattern("session-1")
 
     result = manager.updatePattern(
         "session-1",
@@ -2185,9 +2189,9 @@ def test_completed_pattern_cannot_be_modified():
         },
     )
 
-    assert result is not None
-    assert result.metadata.status == PatternStatus.COMPLETED
-    assert result.observation_count() == 1
+    assert result is None
+    assert manager.getCurrentPattern("session-1") is None
+    assert finalized.metadata.complete is True
 
 
 def test_repeated_finalization_returns_completed_pattern():
@@ -2214,10 +2218,11 @@ def test_repeated_finalization_returns_completed_pattern():
 
     second = manager.finalizePattern("session-1")
 
-    assert second is first
-    assert second.metadata.status == PatternStatus.COMPLETED
-    assert second.metadata.finalized_at == finalized_at
-    assert second.observation_count() == 1
+    assert second is None
+    assert first.metadata.status == PatternStatus.COMPLETED
+    assert first.metadata.complete is True
+    assert first.metadata.finalized_at == finalized_at
+    assert first.observation_count() == 1
 
 
 def test_finalized_pattern_is_handed_off():
@@ -2314,7 +2319,7 @@ def test_missing_session_is_not_handed_off():
     assert received == []
 
 
-def test_failed_handoff_does_not_corrupt_completed_pattern():
+def test_failed_handoff_preserves_latest_valid_candidate():
     def handler(pattern):
         raise RuntimeError("repository unavailable")
 
@@ -2340,8 +2345,10 @@ def test_failed_handoff_does_not_corrupt_completed_pattern():
     pattern = manager.finalizePattern("session-1")
 
     assert pattern is not None
-    assert pattern.metadata.status == PatternStatus.COMPLETED
-    assert pattern.metadata.complete is True
+    assert pattern.metadata.status == PatternStatus.LEARNING
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.finalized_at is None
+    assert manager.getCurrentPattern("session-1") is pattern
     assert pattern.observation_count() == 1
 
 
@@ -2374,7 +2381,9 @@ def test_handler_returning_false_is_failed_handoff():
     pattern = manager.finalizePattern("session-1")
 
     assert pattern is not None
-    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.status == PatternStatus.LEARNING
+    assert pattern.metadata.complete is False
+    assert manager.getCurrentPattern("session-1") is pattern
     assert len(received) == 1
 
 
@@ -4064,12 +4073,8 @@ def test_completed_pattern_cannot_begin_evaluation():
         "session-1"
     )
 
-    assert pattern is not None
-
-    assert (
-        pattern.metadata.status
-        == PatternStatus.COMPLETED
-    )
+    assert pattern is None
+    assert manager.getCurrentPattern("session-1") is None
 
 
 def test_candidate_patterns_are_isolated_between_sessions():
@@ -4580,8 +4585,8 @@ def test_completed_pattern_cannot_return_to_learning():
         "session-lifecycle-010",
     )
 
-    assert result is pattern
-    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert result is None
+    assert manager.getCurrentPattern("session-lifecycle-010") is None
 
 
 def test_completed_pattern_cannot_reenter_evaluation():
@@ -4616,8 +4621,8 @@ def test_completed_pattern_cannot_reenter_evaluation():
         "session-lifecycle-011",
     )
 
-    assert result is pattern
-    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert result is None
+    assert manager.getCurrentPattern("session-lifecycle-011") is None
 
 
 def test_completed_pattern_does_not_accept_new_observations():
@@ -4656,7 +4661,8 @@ def test_completed_pattern_does_not_accept_new_observations():
         second,
     )
 
-    assert result is pattern
+    assert result is None
+    assert manager.getCurrentPattern("session-lifecycle-012") is None
     assert pattern.observation_count() == 1
     assert pattern.timeline.observations == [first]
 
@@ -6017,7 +6023,7 @@ def test_finalization_records_session_end_before_handoff():
         tzinfo=timezone.utc
     )
     assert received[0]["duration"] == 1800.0
-    assert received[0]["status"] == PatternStatus.COMPLETED
+    assert received[0]["status"] == PatternStatus.FINALIZING
 
     assert pattern.session_end_time == explicit_end.replace(
         tzinfo=timezone.utc
@@ -6118,8 +6124,9 @@ def test_handler_returning_false_does_not_corrupt_completed_pattern():
     assert result is pattern
     assert len(calls) == 1
 
-    assert pattern.metadata.status == PatternStatus.COMPLETED
-    assert pattern.metadata.complete is True
+    assert pattern.metadata.status == PatternStatus.LEARNING
+    assert pattern.metadata.complete is False
+    assert manager.getCurrentPattern("session-final-005") is pattern
     assert pattern.observation_count() == 1
 
 
@@ -6221,7 +6228,8 @@ def test_handoff_failure_does_not_remove_active_pattern():
 
     assert result is pattern
     assert current is pattern
-    assert current.metadata.status == PatternStatus.COMPLETED
+    assert current.metadata.status == PatternStatus.LEARNING
+    assert current.metadata.complete is False
     assert current.observation_count() == 1
 
 
@@ -6311,15 +6319,16 @@ def test_finalization_is_idempotent_after_completion():
     )
 
     assert first is pattern
-    assert second is pattern
+    assert second is None
 
     assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
     assert pattern.metadata.finalized_at == finalized_at
 
     assert len(calls) == 1
 
 
-def test_finalization_keeps_finalized_pattern_available_until_reset():
+def test_finalization_releases_active_candidate():
     manager = CandidatePatternManager()
 
     pattern = manager.createPattern(
@@ -6344,22 +6353,14 @@ def test_finalization_keeps_finalized_pattern_available_until_reset():
     )
 
     assert finalized is pattern
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert pattern.metadata.complete is True
 
     current = manager.getCurrentPattern(
         "session-final-010",
     )
 
-    assert current is pattern
-    assert current.metadata.status == PatternStatus.COMPLETED
-
-    removed = manager.resetPattern(
-        "session-final-010",
-    )
-
-    assert removed is pattern
-    assert manager.getCurrentPattern(
-        "session-final-010"
-    ) is None
+    assert current is None
 
 
 def test_non_dict_observation_does_not_corrupt_pattern():
@@ -7661,14 +7662,17 @@ def test_reset_after_finalization_allows_new_session_state():
     assert finalized is first
     assert first.metadata.status == PatternStatus.COMPLETED
 
+    # After successful finalization, the pattern is already removed from active registry
+    assert manager.getCurrentPattern(
+        "session-reset-005"
+    ) is None
+
+    # Calling resetPattern on a session that was already finalized returns None
     removed = manager.resetPattern(
         "session-reset-005",
     )
 
-    assert removed is first
-    assert manager.getCurrentPattern(
-        "session-reset-005"
-    ) is None
+    assert removed is None
 
     second = manager.createPattern(
         session_id="session-reset-005",
@@ -7676,7 +7680,7 @@ def test_reset_after_finalization_allows_new_session_state():
     )
 
     assert second is not first
-    assert second.observation_count() == 0
+    assert second.metadata.complete is False
     assert second.metadata.status == PatternStatus.INITIALIZING
 
 
@@ -8289,7 +8293,7 @@ def test_complete_candidate_pattern_invariant_set():
         "session-final-check-001",
     )
 
-    assert current is pattern
+    assert current is None
 
 
 def test_candidate_pattern_preserves_all_behavioral_dimensions_together():
@@ -8753,3 +8757,617 @@ def test_interrupted_candidate_remains_frozen_until_reset():
     assert pattern.__dict__ == before
     assert pattern.metadata.interrupted is True
     assert pattern.metadata.complete is False
+
+
+def test_failed_incremental_update_is_logged(caplog, monkeypatch):
+    manager = CandidatePatternManager()
+    pattern = manager.createPattern("session-logging-update")
+
+    def fail_update(*args, **kwargs):
+        raise RuntimeError("forced update failure")
+
+    monkeypatch.setattr(
+        manager,
+        "_update_operational_characteristics",
+        fail_update,
+    )
+
+    observation = {
+        "timestamp": pattern.session_start_time,
+        "operation_type": "read",
+    }
+
+    with caplog.at_level("ERROR"):
+        result = manager.updatePattern(
+            "session-logging-update",
+            observation,
+        )
+
+    assert result is pattern
+    assert any(
+        "Failed to update Candidate Pattern" in record.message
+        for record in caplog.records
+    )
+
+
+def test_failed_freeze_is_logged(caplog, monkeypatch):
+    manager = CandidatePatternManager()
+    pattern = manager.createPattern("session-logging-freeze")
+
+    def fail_freeze():
+        raise RuntimeError("forced freeze failure")
+
+    monkeypatch.setattr(
+        pattern,
+        "mark_interrupted",
+        fail_freeze,
+    )
+
+    with caplog.at_level("ERROR"):
+        result = manager.freezePattern("session-logging-freeze")
+
+    assert result is pattern
+    assert any(
+        "Failed to freeze Candidate Pattern" in record.message
+        for record in caplog.records
+    )
+
+
+def test_failed_finalization_is_logged(caplog, monkeypatch):
+    from datetime import timedelta
+
+    manager = CandidatePatternManager()
+
+    start_time = datetime.now(timezone.utc)
+
+    pattern = manager.createPattern(
+        "session-logging-finalize",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-logging-finalize",
+        {
+            "timestamp": start_time + timedelta(seconds=1),
+            "operation_type": "read",
+        },
+    )
+
+    manager.completeSession(
+        "session-logging-finalize",
+        start_time + timedelta(seconds=2),
+    )
+
+    def fail_finalize():
+        raise RuntimeError("forced finalization failure")
+
+    monkeypatch.setattr(
+        pattern,
+        "mark_finalized",
+        fail_finalize,
+    )
+
+    with caplog.at_level("ERROR"):
+        result = manager.finalizePattern(
+            "session-logging-finalize",
+        )
+
+    assert result is pattern
+    assert any(
+        "Failed to finalize Candidate Pattern" in record.message
+        for record in caplog.records
+    )
+
+
+def test_failed_final_pattern_handoff_is_logged(caplog):
+    from datetime import timedelta
+
+    def failing_handler(pattern):
+        raise RuntimeError("forced handoff failure")
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=failing_handler,
+    )
+
+    start_time = datetime.now(timezone.utc)
+
+    pattern = manager.createPattern(
+        "session-logging-handoff",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-logging-handoff",
+        {
+            "timestamp": start_time + timedelta(seconds=1),
+            "operation_type": "read",
+        },
+    )
+
+    manager.completeSession(
+        "session-logging-handoff",
+        start_time + timedelta(seconds=2),
+    )
+
+    previous_status = pattern.metadata.status
+    previous_finalized_at = pattern.metadata.finalized_at
+
+    with caplog.at_level("ERROR"):
+        result = manager.finalizePattern(
+            "session-logging-handoff",
+        )
+
+    assert result is pattern
+    assert pattern.metadata.status == previous_status
+    assert pattern.metadata.complete is False
+    assert pattern.metadata.finalized_at == previous_finalized_at
+    assert manager.getCurrentPattern("session-logging-handoff") is pattern
+    assert any(
+        "Final Pattern handoff failed" in record.message
+        for record in caplog.records
+    )
+
+
+def test_failed_handoff_preserves_candidate_for_retry():
+    from datetime import timedelta
+
+    calls = []
+
+    def flaky_handler(pattern):
+        calls.append(pattern.session_id)
+
+        if len(calls) == 1:
+            return False
+
+        return True
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=flaky_handler,
+    )
+
+    start_time = datetime.now(timezone.utc)
+
+    pattern = manager.createPattern(
+        "session-handoff-retry",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-handoff-retry",
+        {
+            "timestamp": start_time + timedelta(seconds=1),
+            "operation_type": "read",
+        },
+    )
+
+    manager.completeSession(
+        "session-handoff-retry",
+        start_time + timedelta(seconds=2),
+    )
+
+    first_result = manager.finalizePattern(
+        "session-handoff-retry",
+    )
+
+    assert first_result is pattern
+    assert len(calls) == 1
+    assert manager.getCurrentPattern("session-handoff-retry") is pattern
+    assert pattern.metadata.complete is False
+
+    second_result = manager.finalizePattern(
+        "session-handoff-retry",
+    )
+
+    assert second_result is pattern
+    assert len(calls) == 2
+    assert manager.getCurrentPattern("session-handoff-retry") is None
+    assert pattern.metadata.complete is True
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+
+
+def test_successful_finalization_releases_active_candidate():
+    from datetime import timedelta
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=lambda pattern: True,
+    )
+
+    start_time = datetime.now(timezone.utc)
+
+    pattern = manager.createPattern(
+        "session-cleanup",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-cleanup",
+        {
+            "timestamp": start_time + timedelta(seconds=1),
+            "operation_type": "read",
+        },
+    )
+
+    manager.completeSession(
+        "session-cleanup",
+        start_time + timedelta(seconds=2),
+    )
+
+    result = manager.finalizePattern("session-cleanup")
+
+    assert result is pattern
+    assert pattern.metadata.complete is True
+    assert pattern.metadata.status == PatternStatus.COMPLETED
+    assert manager.getCurrentPattern("session-cleanup") is None
+
+
+def test_empty_session_is_discarded_without_handoff():
+    from datetime import timedelta
+
+    calls = []
+
+    def handler(pattern):
+        calls.append(pattern.session_id)
+        return True
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=handler,
+    )
+
+    start_time = datetime.now(timezone.utc)
+
+    pattern = manager.createPattern(
+        "empty-session",
+        session_start_time=start_time,
+    )
+
+    manager.completeSession(
+        "empty-session",
+        start_time + timedelta(seconds=2),
+    )
+
+    result = manager.finalizePattern("empty-session")
+
+    assert result is None
+    assert calls == []
+    assert manager.getCurrentPattern("empty-session") is None
+
+
+def test_pattern_snapshot_is_detached_from_active_candidate():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("snapshot-isolation")
+
+    manager.updatePattern(
+        "snapshot-isolation",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={
+            "working_directory": "/workspace",
+            "workflow_stage": "creation",
+        },
+        relationships=[],
+    )
+
+    snapshot = manager.getPatternSnapshot(
+        "snapshot-isolation"
+    )
+
+    assert snapshot is not None
+    assert snapshot is not pattern
+
+    snapshot.timeline.observations.clear()
+    snapshot.operational_characteristics["MUTATED"] = True
+
+    current = manager.getCurrentPattern(
+        "snapshot-isolation"
+    )
+
+    assert current is pattern
+    assert current.observation_count() == 1
+    assert "MUTATED" not in current.operational_characteristics
+
+
+def test_behavioral_summary_is_detached_from_active_candidate():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("summary-isolation")
+
+    manager.updatePattern(
+        "summary-isolation",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={
+            "working_directory": "/workspace",
+        },
+        relationships=[],
+    )
+
+    summary = manager.getBehavioralSummary(
+        "summary-isolation"
+    )
+
+    assert summary is not None
+
+    summary["operational_characteristics"]["MUTATED"] = True
+
+    current = manager.getCurrentPattern(
+        "summary-isolation"
+    )
+
+    assert "MUTATED" not in current.operational_characteristics
+
+
+def test_pattern_metadata_is_detached_from_active_candidate():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern("metadata-isolation")
+
+    metadata = manager.getPatternMetadata(
+        "metadata-isolation"
+    )
+
+    assert metadata is not None
+
+    metadata["complete"] = True
+    metadata["observation_count"] = 999
+
+    current = manager.getCurrentPattern(
+        "metadata-isolation"
+    )
+
+    assert current.metadata.complete is False
+    assert current.metadata.observation_count == 0
+
+
+def test_evaluation_snapshot_is_fully_detached():
+    manager = CandidatePatternManager()
+
+    pattern = manager.createPattern(
+        "evaluation-isolation"
+    )
+
+    manager.updatePattern(
+        "evaluation-isolation",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={
+            "working_directory": "/workspace",
+        },
+        relationships=[],
+    )
+
+    evaluation = manager.getEvaluationSnapshot(
+        "evaluation-isolation"
+    )
+
+    assert evaluation is not None
+
+    candidate_snapshot = evaluation["candidate_pattern"]
+    candidate_snapshot.timeline.observations.clear()
+
+    evaluation["behavioral_summary"][
+        "operational_characteristics"
+    ]["MUTATED"] = True
+
+    evaluation["pattern_metadata"]["complete"] = True
+
+    current = manager.getCurrentPattern(
+        "evaluation-isolation"
+    )
+
+    assert current is pattern
+    assert current.observation_count() == 1
+    assert "MUTATED" not in current.operational_characteristics
+    assert current.metadata.complete is False
+
+
+def test_successful_update_emits_detached_pattern_notification():
+    notifications = []
+
+    def handler(snapshot):
+        notifications.append(snapshot)
+
+    manager = CandidatePatternManager(
+        pattern_update_handler=handler,
+    )
+
+    pattern = manager.createPattern(
+        "notification-success",
+    )
+
+    manager.updatePattern(
+        "notification-success",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={
+            "working_directory": "/workspace",
+        },
+        relationships=[],
+    )
+
+    assert len(notifications) == 1
+
+    notification = notifications[0]
+
+    assert notification["candidate_pattern"] is not pattern
+    assert notification["candidate_pattern"].observation_count() == 1
+    assert notification["behavioral_summary"] is not None
+    assert notification["pattern_metadata"] is not None
+
+
+def test_pattern_update_notification_cannot_mutate_active_candidate():
+    notifications = []
+
+    def handler(snapshot):
+        notifications.append(snapshot)
+
+        snapshot["candidate_pattern"].timeline.observations.clear()
+        snapshot["behavioral_summary"][
+            "operational_characteristics"
+        ]["MUTATED"] = True
+        snapshot["pattern_metadata"]["complete"] = True
+
+    manager = CandidatePatternManager(
+        pattern_update_handler=handler,
+    )
+
+    pattern = manager.createPattern(
+        "notification-isolation",
+    )
+
+    manager.updatePattern(
+        "notification-isolation",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={
+            "working_directory": "/workspace",
+        },
+        relationships=[],
+    )
+
+    current = manager.getCurrentPattern(
+        "notification-isolation",
+    )
+
+    assert current is pattern
+    assert current.observation_count() == 1
+    assert "MUTATED" not in current.operational_characteristics
+    assert current.metadata.complete is False
+
+
+def test_pattern_update_notification_failure_preserves_candidate():
+    def failing_handler(snapshot):
+        raise RuntimeError("notification failure")
+
+    manager = CandidatePatternManager(
+        pattern_update_handler=failing_handler,
+    )
+
+    pattern = manager.createPattern(
+        "notification-failure",
+    )
+
+    result = manager.updatePattern(
+        "notification-failure",
+        {
+            "signal_type": "EDITING_WORKFLOW",
+            "operation_type": "CREATE",
+            "timestamp": pattern.session_start_time,
+        },
+        context={},
+        relationships=[],
+    )
+
+    assert result is pattern
+    assert pattern.observation_count() == 1
+    assert manager.getCurrentPattern(
+        "notification-failure"
+    ) is pattern
+
+
+def test_pattern_update_notification_failure_is_logged(
+    caplog,
+):
+    def failing_handler(snapshot):
+        raise RuntimeError("notification failure")
+
+    manager = CandidatePatternManager(
+        pattern_update_handler=failing_handler,
+    )
+
+    pattern = manager.createPattern(
+        "notification-logging",
+    )
+
+    with caplog.at_level("ERROR"):
+        manager.updatePattern(
+            "notification-logging",
+            {
+                "signal_type": "EDITING_WORKFLOW",
+                "operation_type": "CREATE",
+                "timestamp": pattern.session_start_time,
+            },
+        )
+
+    assert any(
+        "Pattern update notification failed" in record.message
+        for record in caplog.records
+    )
+
+
+def test_rejected_update_does_not_emit_notification():
+    notifications = []
+
+    manager = CandidatePatternManager(
+        pattern_update_handler=lambda snapshot: notifications.append(
+            snapshot
+        ),
+    )
+
+    manager.createPattern("notification-rejected")
+
+    result = manager.updatePattern(
+        "notification-rejected",
+        {},
+    )
+
+    assert result is not None
+    assert notifications == []
+
+
+def test_long_session_updates_incrementally_without_rebuilding_candidate():
+    from datetime import timedelta
+
+    manager = CandidatePatternManager()
+
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        0,
+        0,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    pattern = manager.createPattern(
+        "long-session",
+        session_start_time=start_time,
+    )
+
+    initial_identity = id(pattern)
+
+    for index in range(1000):
+        observation = {
+            "timestamp": start_time + timedelta(seconds=index + 1),
+            "operation_type": "read",
+        }
+
+        updated = manager.updatePattern(
+            "long-session",
+            observation,
+        )
+
+        assert updated is pattern
+        assert id(updated) == initial_identity
+
+    current = manager.getCurrentPattern("long-session")
+
+    assert current is pattern
+    assert id(current) == initial_identity
+    assert current.observation_count() == 1000

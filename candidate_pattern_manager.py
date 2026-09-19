@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,8 @@ from candidate_pattern_models import (
     CandidatePattern,
     PatternStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CandidatePatternManager:
@@ -22,6 +25,7 @@ class CandidatePatternManager:
     def __init__(
         self,
         final_pattern_handler: Optional[Any] = None,
+        pattern_update_handler: Optional[Any] = None,
     ) -> None:
         """
         Initialize the Candidate Pattern Manager.
@@ -29,6 +33,7 @@ class CandidatePatternManager:
 
         self._active_patterns: Dict[str, CandidatePattern] = {}
         self._final_pattern_handler = final_pattern_handler
+        self._pattern_update_handler = pattern_update_handler
 
     def _validate_session_id(
         self,
@@ -344,9 +349,17 @@ class CandidatePatternManager:
             ):
                 pattern.metadata.status = PatternStatus.LEARNING
 
+            self._notify_pattern_update(session_id)
+
             return pattern
 
         except Exception:
+            logger.exception(
+                "Failed to update Candidate Pattern for session_id=%s; "
+                "preserving the latest valid state.",
+                session_id,
+            )
+
             if previous_state is not None:
                 self._restore_pattern_state(
                     pattern,
@@ -439,6 +452,10 @@ class CandidatePatternManager:
             return pattern
 
         except Exception:
+            logger.exception(
+                "Failed to freeze Candidate Pattern for session_id=%s.",
+                session_id,
+            )
             return pattern
 
     def completeSession(
@@ -524,9 +541,6 @@ class CandidatePatternManager:
         if pattern is None:
             return None
 
-        if pattern.is_empty():
-            return None
-
         if pattern.metadata.interrupted:
             return None
 
@@ -553,18 +567,49 @@ class CandidatePatternManager:
             if pattern.session_end_time is None:
                 return None
 
+            # Empty sessions are discarded without handoff
+            if pattern.observation_count() == 0:
+                self.resetPattern(session_id)
+                return None
+
             pattern.metadata.status = PatternStatus.FINALIZING
 
             pattern.mark_finalized()
 
+            if not self._handoff_final_pattern(pattern):
+                pattern.metadata.status = previous_status
+                pattern.metadata.complete = previous_complete
+                pattern.metadata.finalized_at = previous_finalized_at
+                pattern.session_end_time = previous_session_end
+                pattern.session_duration_seconds = (
+                    previous_session_duration
+                )
+
+                pattern.temporal_characteristics.clear()
+                pattern.temporal_characteristics.update(
+                    previous_temporal
+                )
+
+                pattern.session_characteristics.clear()
+                pattern.session_characteristics.update(
+                    previous_session_characteristics
+                )
+
+                return pattern
+
             pattern.mark_completed()
 
-            if not self._handoff_final_pattern(pattern):
-                return pattern
+            self.resetPattern(session_id)
 
             return pattern
 
         except Exception:
+            logger.exception(
+                "Failed to finalize Candidate Pattern for session_id=%s; "
+                "restoring the latest valid state.",
+                session_id,
+            )
+
             pattern.metadata.status = previous_status
             pattern.metadata.complete = previous_complete
             pattern.metadata.finalized_at = previous_finalized_at
@@ -621,7 +666,49 @@ class CandidatePatternManager:
             return True
 
         except Exception:
+            logger.exception(
+                "Final Pattern handoff failed for session_id=%s.",
+                getattr(pattern, "session_id", "unknown"),
+            )
             return False
+
+    def _notify_pattern_update(
+        self,
+        session_id: str,
+    ) -> None:
+        """
+        Notify an optional downstream consumer that the active
+        Candidate Pattern has been updated successfully.
+
+        The notification receives only a detached evaluation snapshot.
+        Notification failures never invalidate the committed Candidate
+        Pattern update.
+        """
+
+        if self._pattern_update_handler is None:
+            return
+
+        snapshot = self.getEvaluationSnapshot(session_id)
+
+        if snapshot is None:
+            return
+
+        try:
+            result = self._pattern_update_handler(snapshot)
+
+            if result is False:
+                logger.error(
+                    "Pattern update notification was rejected "
+                    "for session_id=%s.",
+                    session_id,
+                )
+
+        except Exception:
+            logger.exception(
+                "Pattern update notification failed "
+                "for session_id=%s; Candidate Pattern remains valid.",
+                session_id,
+            )
 
     def _is_duplicate_observation(
         self,

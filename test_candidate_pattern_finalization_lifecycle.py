@@ -115,7 +115,7 @@ def test_successful_finalization_hands_off_completed_candidate():
     assert handed_off[0] is pattern
 
 
-def test_failed_final_pattern_handoff_preserves_completed_candidate():
+def test_failed_final_pattern_handoff_preserves_latest_valid_candidate():
     start = datetime(
         2026,
         1,
@@ -160,8 +160,8 @@ def test_failed_final_pattern_handoff_preserves_completed_candidate():
     result = manager.finalizePattern(session_id)
 
     assert result is pattern
-    assert result.metadata.complete is True
-    assert result.metadata.status == PatternStatus.COMPLETED
+    assert result.metadata.complete is False
+    assert result.metadata.status == PatternStatus.LEARNING
 
     preserved = manager.getCurrentPattern(session_id)
 
@@ -169,7 +169,7 @@ def test_failed_final_pattern_handoff_preserves_completed_candidate():
     assert preserved.observation_count() == 1
 
 
-def test_reset_releases_completed_candidate_state():
+def test_reset_after_successful_finalization_is_idempotent():
     start = datetime(
         2026,
         1,
@@ -194,8 +194,11 @@ def test_reset_releases_completed_candidate_state():
 
     manager.finalizePattern(session_id)
 
+    # After successful finalization, the pattern is already removed from active registry
+    assert manager.getCurrentPattern(session_id) is None
+
+    # Calling resetPattern on a session that was already finalized returns None
     removed = manager.resetPattern(session_id)
 
-    assert removed is not None
-    assert removed.metadata.complete is True
+    assert removed is None
     assert manager.getCurrentPattern(session_id) is None

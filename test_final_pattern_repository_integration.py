@@ -199,7 +199,8 @@ def test_finalized_pattern_is_handed_off_only_once():
         "session-1"
     )
 
-    assert first_result is second_result
+    assert first_result is not None
+    assert second_result is None
 
     repository = adapter.get_repository()
 
