@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import logging
+from datetime import datetime
 from typing import Dict, List, Optional
 
 from behavioral_identity import (
@@ -13,6 +15,8 @@ from repository_search_result import RepositorySearchResult
 from repository_search_service import (
     RepositorySearchService,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class FinalPatternRepository:
@@ -41,6 +45,7 @@ class FinalPatternRepository:
 
         self._recorded_pattern_ids = set()
         self._recorded_occurrence_ids = set()
+        self._occurrence_behavior_keys: Dict[str, BehavioralKey] = {}
 
         self._behavioral_identity = (
             behavioral_identity
@@ -69,6 +74,7 @@ class FinalPatternRepository:
 
         try:
             if not self._validate_final_pattern(pattern):
+                logger.warning("Rejected invalid FinalPattern: %r", pattern)
                 return False
 
             pattern_id = pattern.pattern_id
@@ -82,20 +88,44 @@ class FinalPatternRepository:
             # ------------------------------------------------------------------
             # Existing pattern-id handling
             # ------------------------------------------------------------------
+            # A previously stored representative pattern.
             if pattern_id in self._patterns:
                 existing_pattern = self._patterns[pattern_id]
 
-                existing_key = self._behavioral_identity.build_key(
-                    existing_pattern
-                )
-
-                if existing_key == pattern_key:
+                # Exact retry of the same immutable object is idempotent.
+                if existing_pattern == pattern:
                     return True
 
+                # Same ID with changed content violates immutability/traceability.
+                logger.warning(
+                    "Rejected FinalPattern %s: pattern ID already exists "
+                    "with different content",
+                    pattern_id,
+                )
                 return False
 
+            # A repeated occurrence that was already recorded.
+            if pattern_id in self._recorded_occurrence_ids:
+                recorded_key = self._occurrence_behavior_keys.get(pattern_id)
+                if recorded_key == pattern_key:
+                    return True
+
+                logger.warning(
+                    "Rejected FinalPattern %s: occurrence ID reused "
+                    "for different behavioral identity",
+                    pattern_id,
+                )
+                return False
+
+            # A repository bookkeeping contradiction must never create
+            # partial or corrupted state.
             if pattern_id in self._recorded_pattern_ids:
-                return True
+                logger.error(
+                    "Repository integrity violation: pattern ID %s is "
+                    "recorded but not present in stored patterns",
+                    pattern_id,
+                )
+                return False
 
             # ------------------------------------------------------------------
             # Repeated behavioral identity
@@ -111,6 +141,7 @@ class FinalPatternRepository:
                 return self._record_repeated_behavior(
                     existing_pattern_id,
                     pattern,
+                    pattern_key,
                 )
 
             # ------------------------------------------------------------------
@@ -169,10 +200,11 @@ class FinalPatternRepository:
         Return independent copies of all historical FinalPatterns.
         """
 
-        return [
-            copy.deepcopy(pattern)
-            for pattern in self._patterns.values()
-        ]
+        patterns = sorted(
+            self._patterns.values(),
+            key=lambda pattern: (pattern.created_at, pattern.pattern_id),
+        )
+        return [copy.deepcopy(pattern) for pattern in patterns]
 
     def find_knowledge_by_key(
         self,
@@ -478,6 +510,7 @@ class FinalPatternRepository:
         self,
         representative_pattern_id: str,
         incoming_pattern: FinalPattern,
+        incoming_key: BehavioralKey,
     ) -> bool:
         """
         Strengthen existing behavioral knowledge atomically.
@@ -496,6 +529,10 @@ class FinalPatternRepository:
         )
 
         if knowledge is None:
+            logger.error(
+                "Missing behavioral knowledge for representative %s",
+                representative_pattern_id,
+            )
             return False
 
         knowledge_snapshot = knowledge.snapshot()
@@ -507,6 +544,9 @@ class FinalPatternRepository:
 
             self._recorded_occurrence_ids.add(
                 incoming_pattern.pattern_id
+            )
+            self._occurrence_behavior_keys[incoming_pattern.pattern_id] = (
+                incoming_key
             )
 
             return True
@@ -525,22 +565,34 @@ class FinalPatternRepository:
         if pattern is None:
             return False
 
-        if not isinstance(
-            pattern,
-            FinalPattern,
-        ):
+        if not isinstance(pattern, FinalPattern):
             return False
 
-        if not pattern.pattern_id:
+        if not isinstance(pattern.pattern_id, str) or not pattern.pattern_id.strip():
             return False
 
-        if not pattern.session_id:
+        if not isinstance(pattern.session_id, str) or not pattern.session_id.strip():
+            return False
+
+        if not isinstance(pattern.created_at, datetime):
+            return False
+
+        if not isinstance(pattern.observation_count, int):
+            return False
+
+        if pattern.observation_count <= 0:
+            return False
+
+        if pattern.observation_count != len(pattern.observations):
+            return False
+
+        if not isinstance(pattern.observations, list):
             return False
 
         if not pattern.observations:
             return False
 
-        if pattern.observation_count <= 0:
+        if any(not isinstance(observation, dict) for observation in pattern.observations):
             return False
 
         return True

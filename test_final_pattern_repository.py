@@ -955,3 +955,117 @@ def test_integrity_detects_missing_knowledge():
     repository._knowledge.clear()
 
     assert repository.validate_integrity() is False
+
+
+def test_repository_rejects_inconsistent_observation_count():
+    repository = FinalPatternRepository()
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 9, 4, 10, 0, 0),
+        observations=[
+            {"operation_type": "CREATE", "timestamp": datetime(2026, 9, 4, 10, 0, 0), "file_extension": ".py", "directory": "/project"},
+            {"operation_type": "DELETE", "timestamp": datetime(2026, 9, 4, 10, 0, 0), "file_extension": ".py", "directory": "/project"},
+        ],
+        observation_count=1,
+    )
+    assert repository.store(pattern) is False
+    assert repository.count() == 0
+    assert repository.validate_integrity() is True
+
+
+def test_repository_rejects_non_dict_observation():
+    repository = FinalPatternRepository()
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 9, 4, 10, 0, 0),
+        observations=["invalid"],
+        observation_count=1,
+    )
+    assert repository.store(pattern) is False
+    assert repository.count() == 0
+
+
+def test_get_all_returns_patterns_in_chronological_order():
+    repository = FinalPatternRepository()
+    newest = FinalPattern(
+        pattern_id="pattern-new",
+        session_id="session-new",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 3),
+        observations=[
+            {
+                "operation_type": "DELETE",
+                "timestamp": datetime(2026, 1, 3),
+                "file_extension": ".py",
+                "directory": "/project",
+            }
+        ],
+        observation_count=1,
+    )
+    oldest = FinalPattern(
+        pattern_id="pattern-old",
+        session_id="session-old",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": datetime(2026, 1, 1),
+                "file_extension": ".py",
+                "directory": "/project",
+            }
+        ],
+        observation_count=1,
+    )
+    middle = FinalPattern(
+        pattern_id="pattern-middle",
+        session_id="session-middle",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 2),
+        observations=[
+            {
+                "operation_type": "MODIFY",
+                "timestamp": datetime(2026, 1, 2),
+                "file_extension": ".py",
+                "directory": "/project",
+            }
+        ],
+        observation_count=1,
+    )
+    assert repository.store(newest) is True
+    assert repository.store(oldest) is True
+    assert repository.store(middle) is True
+
+    patterns = repository.get_all()
+    assert len(patterns) == 3
+    assert patterns[0].pattern_id == "pattern-old"
+    assert patterns[1].pattern_id == "pattern-middle"
+    assert patterns[2].pattern_id == "pattern-new"
+
+
+def test_occurrence_id_reuse_for_different_behavior_is_rejected():
+    repository = FinalPatternRepository()
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        operation_type="CREATE",
+    )
+    repeated = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="CREATE",
+    )
+    conflicting = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-3",
+        operation_type="DELETE",
+    )
+    assert repository.store(first) is True
+    assert repository.store(repeated) is True
+    assert repository.store(conflicting) is False
+    assert repository.count() == 1
+    assert repository.validate_integrity() is True
