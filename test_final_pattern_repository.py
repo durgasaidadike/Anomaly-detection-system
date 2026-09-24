@@ -3,6 +3,7 @@ from datetime import datetime
 from behavioral_identity import BehavioralIdentity
 from final_pattern_models import FinalPattern
 from final_pattern_repository import FinalPatternRepository
+from pattern_reference import PatternReference
 from repository_search_result import (
     RepositorySearchResult,
 )
@@ -1578,3 +1579,171 @@ def test_occurrence_id_reuse_for_different_behavior_is_rejected():
     assert repository.store(conflicting) is False
     assert repository.count() == 1
     assert repository.validate_integrity() is True
+
+
+def test_get_pattern_references_returns_historical_references():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    references = repository.get_pattern_references(
+        "user-1"
+    )
+
+    assert len(references) == 1
+
+    reference = references[0]
+
+    assert reference.pattern_id == "pattern-1"
+    assert reference.session_id == "session-1"
+    assert reference.user_id == "user-1"
+    assert reference.created_at == pattern.created_at
+
+
+def test_pattern_reference_resolves_to_detached_pattern():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    reference = repository.get_pattern_references(
+        "user-1"
+    )[0]
+
+    resolved = repository.resolve_pattern_reference(
+        reference
+    )
+
+    assert resolved is not None
+    assert resolved.pattern_id == "pattern-1"
+    assert resolved is not pattern
+
+
+def test_invalid_pattern_reference_returns_none():
+    repository = FinalPatternRepository()
+
+    invalid_reference = PatternReference(
+        pattern_id="missing",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+    )
+
+    assert (
+        repository.resolve_pattern_reference(
+            invalid_reference
+        )
+        is None
+    )
+
+
+def test_tampered_pattern_reference_is_rejected():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    tampered = PatternReference(
+        pattern_id="pattern-1",
+        session_id="wrong-session",
+        user_id="user-1",
+        created_at=pattern.created_at,
+    )
+
+    assert (
+        repository.resolve_pattern_reference(
+            tampered
+        )
+        is None
+    )
+
+
+def test_retrieve_recent_patterns_respects_limit():
+    repository = FinalPatternRepository()
+
+    for index, operation in enumerate(
+        ["CREATE", "MODIFY", "DELETE", "MOVE"],
+        start=1,
+    ):
+        pattern = FinalPattern(
+            pattern_id=f"pattern-{index}",
+            session_id=f"session-{index}",
+            user_id="user-1",
+            created_at=datetime(
+                2026,
+                1,
+                index,
+            ),
+            observations=[
+                {
+                    "operation_type": operation,
+                }
+            ],
+            observation_count=1,
+        )
+
+        assert repository.store(pattern) is True
+
+    recent = repository.retrieve_recent_patterns(
+        "user-1",
+        2,
+    )
+
+    assert [
+        pattern.pattern_id
+        for pattern in recent
+    ] == [
+        "pattern-3",
+        "pattern-4",
+    ]
+
+
+def test_recent_pattern_retrieval_rejects_non_positive_limit():
+    repository = FinalPatternRepository()
+
+    assert (
+        repository.retrieve_recent_patterns(
+            "user-1",
+            0,
+        )
+        == []
+    )
+
+    assert (
+        repository.retrieve_recent_patterns(
+            "user-1",
+            -1,
+        )
+        == []
+    )

@@ -11,6 +11,7 @@ from behavioral_identity import (
 )
 from behavioral_knowledge import BehavioralKnowledge
 from final_pattern_models import FinalPattern
+from pattern_reference import PatternReference
 from repository_search_result import RepositorySearchResult
 from repository_search_service import (
     RepositorySearchService,
@@ -386,6 +387,98 @@ class FinalPatternRepository:
         """
 
         return self.retrieve_patterns(user_id)
+
+    def retrieve_recent_patterns(
+        self,
+        user_id: Optional[str],
+        limit: int,
+    ) -> List[FinalPattern]:
+        """
+        Return the most recent historical FinalPatterns for a user.
+
+        Results remain chronological from oldest to newest within
+        the selected window.
+        """
+
+        if limit <= 0:
+            return []
+
+        patterns = self.retrieve_patterns(user_id)
+
+        return patterns[-limit:]
+
+    def get_pattern_references(
+        self,
+        user_id: Optional[str],
+    ) -> List[PatternReference]:
+        """
+        Return immutable logical references to a user's
+        historical FinalPatterns.
+        """
+
+        patterns = self.retrieve_patterns(user_id)
+
+        return [
+            PatternReference(
+                pattern_id=pattern.pattern_id,
+                session_id=pattern.session_id,
+                user_id=pattern.user_id,
+                created_at=pattern.created_at,
+            )
+            for pattern in patterns
+        ]
+
+    def get_recent_pattern_references(
+        self,
+        user_id: Optional[str],
+        limit: int,
+    ) -> List[PatternReference]:
+        """
+        Return references for the most recent historical patterns.
+        """
+
+        patterns = self.retrieve_recent_patterns(
+            user_id,
+            limit,
+        )
+
+        return [
+            PatternReference(
+                pattern_id=pattern.pattern_id,
+                session_id=pattern.session_id,
+                user_id=pattern.user_id,
+                created_at=pattern.created_at,
+            )
+            for pattern in patterns
+        ]
+
+    def resolve_pattern_reference(
+        self,
+        reference: PatternReference,
+    ) -> Optional[FinalPattern]:
+        """
+        Resolve a historical reference into a detached
+        FinalPattern snapshot.
+        """
+
+        if not self._validate_pattern_reference(reference):
+            return None
+
+        pattern = self.get(reference.pattern_id)
+
+        if pattern is None:
+            return None
+
+        if pattern.session_id != reference.session_id:
+            return None
+
+        if pattern.user_id != reference.user_id:
+            return None
+
+        if pattern.created_at != reference.created_at:
+            return None
+
+        return pattern
 
     def get_latest_pattern(
         self,
@@ -932,6 +1025,33 @@ class FinalPatternRepository:
             )
 
             return False
+
+    def _validate_pattern_reference(
+        self,
+        reference: PatternReference,
+    ) -> bool:
+        if reference is None:
+            return False
+
+        if not isinstance(
+            reference,
+            PatternReference,
+        ):
+            return False
+
+        if not reference.pattern_id:
+            return False
+
+        if not reference.session_id:
+            return False
+
+        if not isinstance(
+            reference.created_at,
+            datetime,
+        ):
+            return False
+
+        return True
 
     def _validate_final_pattern(
         self,
