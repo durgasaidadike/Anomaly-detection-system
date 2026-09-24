@@ -16,6 +16,7 @@ from repository_search_result import RepositorySearchResult
 from repository_search_service import (
     RepositorySearchService,
 )
+from repository_snapshot import RepositorySnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,9 @@ class FinalPatternRepository:
         self._recorded_pattern_ids = set()
         self._recorded_occurrence_ids = set()
         self._occurrence_behavior_keys: Dict[str, BehavioralKey] = {}
-        self._user_pattern_index: Dict[Optional[str], List[str]] = {}
+        self._user_pattern_index: Dict[str, List[str]] = {}
         self._session_pattern_index: Dict[str, str] = {}
-        self._baseline_pattern_ids: Dict[
-            Optional[str],
-            str,
-        ] = {}
+        self._baseline_pattern_ids: Dict[str, str] = {}
 
         self._behavioral_identity = (
             behavioral_identity
@@ -340,7 +338,12 @@ class FinalPatternRepository:
         Only stored representative FinalPatterns are returned.
         Returned objects are independent copies and cannot mutate
         repository state.
+
+        Userless requests fail closed and return no history.
         """
+
+        if not self._is_valid_user_id(user_id):
+            return []
 
         try:
             pattern_ids = self._user_pattern_index.get(
@@ -403,6 +406,9 @@ class FinalPatternRepository:
         if limit <= 0:
             return []
 
+        if not self._is_valid_user_id(user_id):
+            return []
+
         patterns = self.retrieve_patterns(user_id)
 
         return patterns[-limit:]
@@ -415,6 +421,9 @@ class FinalPatternRepository:
         Return immutable logical references to a user's
         historical FinalPatterns.
         """
+
+        if not self._is_valid_user_id(user_id):
+            return []
 
         patterns = self.retrieve_patterns(user_id)
 
@@ -436,6 +445,9 @@ class FinalPatternRepository:
         """
         Return references for the most recent historical patterns.
         """
+
+        if not self._is_valid_user_id(user_id):
+            return []
 
         patterns = self.retrieve_recent_patterns(
             user_id,
@@ -459,26 +471,37 @@ class FinalPatternRepository:
         """
         Resolve a historical reference into a detached
         FinalPattern snapshot.
+
+        A reference is only resolvable when it is structurally valid,
+        its owner identity is real, and it matches the stored pattern's
+        user, session, and creation timestamp.
         """
 
         if not self._validate_pattern_reference(reference):
             return None
 
-        pattern = self.get(reference.pattern_id)
-
-        if pattern is None:
+        if not self._is_valid_user_id(
+            reference.user_id
+        ):
             return None
 
-        if pattern.session_id != reference.session_id:
+        pattern = self._patterns.get(
+            reference.pattern_id
+        )
+
+        if pattern is None:
             return None
 
         if pattern.user_id != reference.user_id:
             return None
 
+        if pattern.session_id != reference.session_id:
+            return None
+
         if pattern.created_at != reference.created_at:
             return None
 
-        return pattern
+        return copy.deepcopy(pattern)
 
     def get_latest_pattern(
         self,
@@ -487,6 +510,9 @@ class FinalPatternRepository:
         """
         Return the most recent historical FinalPattern for a user.
         """
+
+        if not self._is_valid_user_id(user_id):
+            return None
 
         patterns = self.retrieve_patterns(user_id)
 
@@ -505,6 +531,9 @@ class FinalPatternRepository:
         The returned FinalPattern is detached from repository state.
         """
 
+        if not self._is_valid_user_id(user_id):
+            return None
+
         pattern_id = self._baseline_pattern_ids.get(
             user_id
         )
@@ -518,6 +547,9 @@ class FinalPatternRepository:
         self,
         user_id: Optional[str],
     ) -> bool:
+        if not self._is_valid_user_id(user_id):
+            return False
+
         return user_id in self._baseline_pattern_ids
 
     def get_repository_metadata(self) -> Dict[str, int]:
@@ -538,6 +570,141 @@ class FinalPatternRepository:
             ),
         }
 
+    # ------------------------------------------------------------------
+    # Recovery boundary
+    # ------------------------------------------------------------------
+    def create_snapshot(self) -> RepositorySnapshot:
+        """
+        Create a detached snapshot of repository state for recovery.
+        """
+
+        return RepositorySnapshot(
+            patterns=copy.deepcopy(
+                list(self._patterns.values())
+            ),
+            knowledge=copy.deepcopy(
+                list(self._knowledge.values())
+            ),
+            pattern_index=copy.deepcopy(
+                self._pattern_index
+            ),
+            user_pattern_index=copy.deepcopy(
+                self._user_pattern_index
+            ),
+            session_pattern_index=copy.deepcopy(
+                self._session_pattern_index
+            ),
+            recorded_pattern_ids=list(
+                self._recorded_pattern_ids
+            ),
+            recorded_occurrence_ids=list(
+                self._recorded_occurrence_ids
+            ),
+            occurrence_behavior_keys=copy.deepcopy(
+                self._occurrence_behavior_keys
+            ),
+            baseline_pattern_ids=copy.deepcopy(
+                self._baseline_pattern_ids
+            ),
+        )
+
+    def validate_snapshot(
+        self,
+        snapshot: RepositorySnapshot,
+    ) -> bool:
+        """
+        Structurally validate a recovery snapshot.
+
+        This is structural validation only. It must not perform
+        behavioral interpretation of the snapshot contents.
+        """
+
+        if snapshot is None:
+            return False
+
+        if not isinstance(
+            snapshot,
+            RepositorySnapshot,
+        ):
+            return False
+
+        if not isinstance(snapshot.patterns, list):
+            return False
+
+        if not isinstance(snapshot.knowledge, list):
+            return False
+
+        if not isinstance(
+            snapshot.pattern_index,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.user_pattern_index,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.session_pattern_index,
+            dict,
+        ):
+            return False
+
+        return True
+
+    def restore_snapshot(
+        self,
+        snapshot: RepositorySnapshot,
+    ) -> bool:
+        """
+        Restore repository logical state atomically.
+
+        A failed restore operation must never leave the repository
+        partially restored. The previous logical state is captured
+        before publication and re-applied if recovery fails.
+        """
+
+        if not self.validate_snapshot(snapshot):
+            return False
+
+        try:
+            previous_snapshot = self.create_snapshot()
+        except Exception:
+            logger.exception(
+                "Failed to capture pre-restore repository state"
+            )
+            return False
+
+        try:
+            self._apply_snapshot_state(snapshot)
+
+            if not self.validate_integrity():
+                raise ValueError(
+                    "Restored repository state failed integrity "
+                    "validation"
+                )
+
+            return True
+
+        except Exception:
+            logger.exception(
+                "Failed to restore repository snapshot"
+            )
+
+            # Roll back through the same internal state loader used by
+            # forward recovery. The public recovery API must never
+            # re-enter itself.
+            try:
+                self._apply_snapshot_state(previous_snapshot)
+            except Exception:
+                logger.exception(
+                    "Failed to roll back repository state"
+                )
+
+            return False
+
     def find_knowledge_by_key(
         self,
         behavior_key: BehavioralKey,
@@ -551,6 +718,11 @@ class FinalPatternRepository:
         """
 
         if not behavior_key:
+            return None
+
+        if not self._is_valid_user_id(
+            behavior_key[0]
+        ):
             return None
 
         try:
@@ -718,10 +890,22 @@ class FinalPatternRepository:
                 ):
                     return False
 
+            # Every stored FinalPattern must belong to a real user.
+            for pattern in self._patterns.values():
+                if not self._is_valid_user_id(
+                    pattern.user_id
+                ):
+                    return False
+
             # Every user-indexed pattern must exist.
             for user_id, indexed_ids in (
                 self._user_pattern_index.items()
             ):
+                if not self._is_valid_user_id(
+                    user_id
+                ):
+                    return False
+
                 for pattern_id in indexed_ids:
                     if pattern_id not in self._patterns:
                         return False
@@ -761,6 +945,11 @@ class FinalPatternRepository:
             for user_id, baseline_pattern_id in (
                 self._baseline_pattern_ids.items()
             ):
+                if not self._is_valid_user_id(
+                    user_id
+                ):
+                    return False
+
                 if baseline_pattern_id not in self._patterns:
                     return False
 
@@ -926,6 +1115,24 @@ class FinalPatternRepository:
         is restored and the operation reports failure.
         """
 
+        representative_pattern = self._patterns.get(
+            representative_pattern_id
+        )
+
+        if representative_pattern is None:
+            return False
+
+        if not self._is_valid_user_id(
+            incoming_pattern.user_id
+        ):
+            return False
+
+        if (
+            representative_pattern.user_id
+            != incoming_pattern.user_id
+        ):
+            return False
+
         knowledge_id = (
             f"knowledge-{representative_pattern_id}"
         )
@@ -1026,6 +1233,105 @@ class FinalPatternRepository:
 
             return False
 
+    def _apply_snapshot_state(
+        self,
+        snapshot: RepositorySnapshot,
+    ) -> None:
+        """
+        Publish repository logical state derived from a snapshot.
+
+        This is the single internal state loader used by both forward
+        recovery and deterministic rollback. Structural and integrity
+        validation remain the responsibility of the public API, and this
+        helper never re-enters the public recovery path.
+
+        Every state container is fully materialized before any repository
+        state is reassigned, so a failure while building state cannot
+        leave the repository partially restored.
+        """
+
+        candidate_patterns = {
+            pattern.pattern_id: copy.deepcopy(pattern)
+            for pattern in snapshot.patterns
+        }
+
+        candidate_knowledge = {
+            knowledge.knowledge_id: copy.deepcopy(knowledge)
+            for knowledge in snapshot.knowledge
+        }
+
+        candidate_pattern_index = copy.deepcopy(
+            snapshot.pattern_index
+        )
+
+        candidate_user_pattern_index = copy.deepcopy(
+            snapshot.user_pattern_index
+        )
+
+        candidate_session_pattern_index = copy.deepcopy(
+            snapshot.session_pattern_index
+        )
+
+        candidate_recorded_pattern_ids = set(
+            snapshot.recorded_pattern_ids
+        )
+
+        candidate_recorded_occurrence_ids = set(
+            snapshot.recorded_occurrence_ids
+        )
+
+        candidate_occurrence_behavior_keys = copy.deepcopy(
+            snapshot.occurrence_behavior_keys
+        )
+
+        candidate_baseline_pattern_ids = copy.deepcopy(
+            snapshot.baseline_pattern_ids
+        )
+
+        self._patterns = candidate_patterns
+        self._pattern_index = candidate_pattern_index
+        self._knowledge = candidate_knowledge
+        self._user_pattern_index = candidate_user_pattern_index
+        self._session_pattern_index = candidate_session_pattern_index
+        self._recorded_pattern_ids = (
+            candidate_recorded_pattern_ids
+        )
+        self._recorded_occurrence_ids = (
+            candidate_recorded_occurrence_ids
+        )
+        self._occurrence_behavior_keys = (
+            candidate_occurrence_behavior_keys
+        )
+        self._baseline_pattern_ids = (
+            candidate_baseline_pattern_ids
+        )
+
+        # The search service holds live references to the published state
+        # containers, so it must be rebuilt against the restored state in
+        # order to resume normal operation after recovery.
+        self._search_service = RepositorySearchService(
+            patterns=self._patterns,
+            pattern_index=self._pattern_index,
+            knowledge=self._knowledge,
+            behavioral_identity=self._behavioral_identity,
+        )
+
+    @staticmethod
+    def _is_valid_user_id(
+        user_id: Optional[str],
+    ) -> bool:
+        """
+        Return True only for a real, non-blank user identity.
+
+        The repository validates identity existence, not identity
+        format.
+        """
+
+        return (
+            isinstance(user_id, str)
+            and bool(user_id.strip())
+        )
+
     def _validate_pattern_reference(
         self,
         reference: PatternReference,
@@ -1069,7 +1375,27 @@ class FinalPatternRepository:
         if not isinstance(pattern.session_id, str) or not pattern.session_id.strip():
             return False
 
+        if not self._is_valid_user_id(
+            pattern.user_id
+        ):
+            return False
+
         if not isinstance(pattern.created_at, datetime):
+            return False
+
+        if not isinstance(
+            pattern.pattern_version,
+            int,
+        ):
+            return False
+
+        if pattern.pattern_version <= 0:
+            return False
+
+        if not isinstance(
+            pattern.learning_metadata,
+            dict,
+        ):
             return False
 
         if not isinstance(pattern.observation_count, int):

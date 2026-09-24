@@ -90,3 +90,76 @@ def test_final_pattern_snapshot_is_independent():
     assert snapshot == final_pattern
     assert snapshot is not final_pattern
     assert snapshot.observations is not final_pattern.observations
+
+
+def test_factory_populates_learning_metadata():
+    candidate = build_completed_pattern()
+
+    final_pattern = FinalPatternFactory().create(
+        candidate
+    )
+
+    assert final_pattern is not None
+    assert final_pattern.pattern_version == 1
+
+    assert (
+        final_pattern.learning_metadata["origin"]
+        == "candidate_pattern_manager"
+    )
+
+    assert (
+        final_pattern.learning_metadata[
+            "initial_observation_count"
+        ]
+        == candidate.observation_count()
+    )
+
+
+def test_factory_rejects_invalid_version_and_metadata():
+    candidate = build_completed_pattern()
+
+    factory = FinalPatternFactory()
+
+    assert (
+        factory.create(
+            candidate,
+            pattern_version=0,
+        )
+        is None
+    )
+
+    assert (
+        factory.create(
+            candidate,
+            pattern_version="invalid",
+        )
+        is None
+    )
+
+    assert (
+        factory.create(
+            candidate,
+            learning_metadata="invalid",
+        )
+        is None
+    )
+
+
+def test_factory_detaches_supplied_learning_metadata():
+    candidate = build_completed_pattern()
+
+    metadata = {
+        "origin": "behavioral_evolution",
+        "reason": "recurring_behavior",
+    }
+
+    final_pattern = FinalPatternFactory().create(
+        candidate,
+        pattern_version=2,
+        learning_metadata=metadata,
+    )
+
+    assert final_pattern is not None
+    assert final_pattern.pattern_version == 2
+    assert final_pattern.learning_metadata == metadata
+    assert final_pattern.learning_metadata is not metadata

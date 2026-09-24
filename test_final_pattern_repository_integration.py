@@ -168,6 +168,7 @@ def test_finalized_pattern_is_handed_off_only_once():
 
     manager.createPattern(
         "session-1",
+        user_id="user-1",
         session_start_time=start_time,
     )
 
@@ -206,3 +207,59 @@ def test_finalized_pattern_is_handed_off_only_once():
 
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
+
+
+def test_userless_finalized_pattern_is_refused_by_repository():
+    adapter = FinalPatternRepositoryAdapter()
+
+    manager = CandidatePatternManager(
+        final_pattern_handler=adapter.store,
+    )
+
+    start_time = datetime(
+        2026,
+        1,
+        1,
+        10,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    manager.createPattern(
+        "session-userless",
+        session_start_time=start_time,
+    )
+
+    manager.updatePattern(
+        "session-userless",
+        {
+            "operation_type": "CREATED",
+            "timestamp": start_time,
+        },
+    )
+
+    manager.completeSession(
+        "session-userless",
+        session_end_time=datetime(
+            2026,
+            1,
+            1,
+            10,
+            1,
+            tzinfo=timezone.utc,
+        ),
+    )
+
+    finalized = manager.finalizePattern(
+        "session-userless"
+    )
+
+    # Module 05 may finalize a userless Candidate Pattern, but the
+    # permanent repository refuses to commit userless behavioral memory.
+    assert finalized is not None
+
+    repository = adapter.get_repository()
+
+    assert repository.count() == 0
+    assert repository.knowledge_count() == 0
+    assert repository.validate_integrity() is True

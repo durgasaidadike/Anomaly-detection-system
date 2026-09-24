@@ -7,17 +7,19 @@ from pattern_reference import PatternReference
 from repository_search_result import (
     RepositorySearchResult,
 )
+from repository_snapshot import RepositorySnapshot
 
 
 def build_final_pattern(
     pattern_id="pattern-1",
     session_id="session-1",
     operation_type="CREATE",
+    user_id="user-1",
 ):
     return FinalPattern(
         pattern_id=pattern_id,
         session_id=session_id,
-        user_id="user-1",
+        user_id=user_id,
         created_at=datetime(2026, 9, 4, 10, 0, 0),
         observations=[
             {
@@ -1747,3 +1749,616 @@ def test_recent_pattern_retrieval_rejects_non_positive_limit():
         )
         == []
     )
+
+
+def test_snapshot_round_trip_restores_history():
+    source = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    assert source.store(first) is True
+    assert source.store(second) is True
+
+    snapshot = source.create_snapshot()
+
+    recovered = FinalPatternRepository()
+
+    assert recovered.restore_snapshot(snapshot) is True
+
+    assert recovered.count() == source.count()
+
+    assert [
+        pattern.pattern_id
+        for pattern in recovered.retrieve_patterns(
+            "user-1"
+        )
+    ] == [
+        pattern.pattern_id
+        for pattern in source.retrieve_patterns(
+            "user-1"
+        )
+    ]
+
+
+def test_created_snapshot_is_detached_from_repository():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern) is True
+
+    snapshot = repository.create_snapshot()
+
+    # A snapshot is a detached logical container. Mutating it must never
+    # modify the live repository.
+    snapshot.patterns[0] = build_final_pattern(
+        pattern_id="pattern-tampered",
+        session_id="session-tampered",
+    )
+
+    snapshot.knowledge[0].occurrence_count = 99
+
+    snapshot.pattern_index.clear()
+    snapshot.session_pattern_index.clear()
+
+    snapshot.user_pattern_index["user-1"].append(
+        "pattern-tampered"
+    )
+
+    snapshot.recorded_pattern_ids.append(
+        "pattern-tampered"
+    )
+
+    snapshot.recorded_occurrence_ids.append(
+        "pattern-tampered"
+    )
+
+    snapshot.occurrence_behavior_keys[
+        "pattern-tampered"
+    ] = (
+        "user-1",
+        ("CREATE",),
+        (".py",),
+        ("/project",),
+    )
+
+    snapshot.baseline_pattern_ids["user-1"] = (
+        "pattern-tampered"
+    )
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+    assert repository.contains("pattern-tampered") is False
+
+    assert [
+        pattern.pattern_id
+        for pattern in repository.retrieve_patterns(
+            "user-1"
+        )
+    ] == ["pattern-1"]
+
+    baseline = repository.get_baseline_pattern("user-1")
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 1
+
+    assert repository.search(pattern).matched is True
+
+    assert repository.validate_integrity() is True
+
+
+def test_restore_snapshot_after_shutdown_preserves_state():
+    repository = FinalPatternRepository()
+
+    for index, operation in enumerate(
+        ["CREATE", "MODIFY", "DELETE"],
+        start=1,
+    ):
+        pattern = FinalPattern(
+            pattern_id=f"pattern-{index}",
+            session_id=f"session-{index}",
+            user_id="user-1",
+            created_at=datetime(
+                2026,
+                1,
+                index,
+            ),
+            observations=[
+                {
+                    "operation_type": operation,
+                }
+            ],
+            observation_count=1,
+        )
+
+        assert repository.store(pattern) is True
+
+    snapshot = repository.create_snapshot()
+
+    references = repository.get_pattern_references(
+        "user-1"
+    )
+
+    baseline = repository.get_baseline_pattern("user-1")
+    latest = repository.get_latest_pattern("user-1")
+
+    assert baseline is not None
+    assert latest is not None
+
+    # Simulated shutdown: a fresh repository instance recovers its
+    # logical state from the snapshot alone.
+    recovered = FinalPatternRepository()
+
+    assert recovered.restore_snapshot(snapshot) is True
+
+    assert recovered.count() == 3
+    assert recovered.knowledge_count() == 3
+
+    assert [
+        pattern.pattern_id
+        for pattern in recovered.retrieve_patterns(
+            "user-1"
+        )
+    ] == [
+        "pattern-1",
+        "pattern-2",
+        "pattern-3",
+    ]
+
+    restored_baseline = recovered.get_baseline_pattern(
+        "user-1"
+    )
+
+    assert restored_baseline is not None
+    assert restored_baseline.pattern_id == (
+        baseline.pattern_id
+    )
+
+    restored_latest = recovered.get_latest_pattern(
+        "user-1"
+    )
+
+    assert restored_latest is not None
+    assert restored_latest.pattern_id == latest.pattern_id
+
+    restored_references = (
+        recovered.get_pattern_references("user-1")
+    )
+
+    assert [
+        (
+            reference.pattern_id,
+            reference.session_id,
+            reference.user_id,
+            reference.created_at,
+        )
+        for reference in restored_references
+    ] == [
+        (
+            reference.pattern_id,
+            reference.session_id,
+            reference.user_id,
+            reference.created_at,
+        )
+        for reference in references
+    ]
+
+    resolved = recovered.resolve_pattern_reference(
+        restored_references[0]
+    )
+
+    assert resolved is not None
+    assert resolved.pattern_id == "pattern-1"
+
+    assert recovered.validate_integrity() is True
+
+
+def test_restored_repository_resumes_normal_search():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern) is True
+
+    snapshot = repository.create_snapshot()
+
+    recovered = FinalPatternRepository()
+
+    assert recovered.restore_snapshot(snapshot) is True
+
+    result = recovered.search(pattern)
+
+    assert result.matched is True
+    assert result.representative_pattern is not None
+    assert result.representative_pattern.pattern_id == (
+        "pattern-1"
+    )
+    assert result.behavioral_knowledge is not None
+
+
+def test_corrupted_snapshot_is_rejected_without_changes():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern) is True
+
+    corrupted = RepositorySnapshot(
+        patterns="not-a-list",
+        knowledge=None,
+        pattern_index="not-a-dict",
+        user_pattern_index=[],
+        session_pattern_index=None,
+        recorded_pattern_ids=[],
+        recorded_occurrence_ids=[],
+        occurrence_behavior_keys={},
+        baseline_pattern_ids={},
+    )
+
+    assert repository.validate_snapshot(corrupted) is False
+    assert repository.validate_snapshot(None) is False
+    assert repository.validate_snapshot("not-a-snapshot") is (
+        False
+    )
+
+    assert repository.restore_snapshot(corrupted) is False
+    assert repository.restore_snapshot(None) is False
+
+    assert repository.count() == 1
+    assert repository.contains("pattern-1") is True
+
+    baseline = repository.get_baseline_pattern("user-1")
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    assert repository.validate_integrity() is True
+
+
+def test_failed_restore_preserves_original_state(monkeypatch):
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    assert repository.store(first) is True
+    assert repository.store(second) is True
+
+    incoming = FinalPatternRepository()
+
+    replacement = FinalPattern(
+        pattern_id="pattern-recovered",
+        session_id="session-recovered",
+        user_id="user-1",
+        created_at=datetime(2026, 5, 1),
+        observations=[
+            {
+                "operation_type": "MOVE",
+            }
+        ],
+        observation_count=1,
+    )
+
+    assert incoming.store(replacement) is True
+
+    snapshot = incoming.create_snapshot()
+
+    # Force integrity validation to reject the restored state.
+    monkeypatch.setattr(
+        repository,
+        "validate_integrity",
+        lambda: False,
+    )
+
+    assert repository.restore_snapshot(snapshot) is False
+
+    monkeypatch.undo()
+
+    assert repository.count() == 2
+    assert repository.contains("pattern-recovered") is False
+
+    assert [
+        pattern.pattern_id
+        for pattern in repository.retrieve_patterns(
+            "user-1"
+        )
+    ] == ["pattern-1", "pattern-2"]
+
+    baseline = repository.get_baseline_pattern("user-1")
+    latest = repository.get_latest_pattern("user-1")
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    assert latest is not None
+    assert latest.pattern_id == "pattern-2"
+
+    # The rollback must restore the behavioral search boundary too.
+    assert repository.search(first).matched is True
+
+    assert repository.validate_integrity() is True
+
+
+def test_pattern_version_and_learning_metadata_are_preserved():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        pattern_version=2,
+        learning_metadata={
+            "origin": "candidate_pattern_manager",
+            "reason": "behavioral_evolution",
+        },
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    stored = repository.get("pattern-1")
+
+    assert stored is not None
+    assert stored.pattern_version == 2
+    assert stored.learning_metadata == {
+        "origin": "candidate_pattern_manager",
+        "reason": "behavioral_evolution",
+    }
+
+
+def test_repository_rejects_invalid_pattern_version():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        pattern_version=0,
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is False
+    assert repository.count() == 0
+
+
+def test_repository_rejects_invalid_learning_metadata():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        learning_metadata="invalid",
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is False
+    assert repository.count() == 0
+
+
+def test_repository_rejects_final_pattern_without_user_id():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id=None,
+    )
+
+    assert repository.store(
+        pattern
+    ) is False
+
+    assert repository.count() == 0
+
+
+def test_repository_rejects_blank_user_id():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="   ",
+    )
+
+    assert repository.store(
+        pattern
+    ) is False
+
+    assert repository.count() == 0
+
+
+def test_repository_rejects_non_identity_user_values():
+    repository = FinalPatternRepository()
+
+    for invalid_user_id in ("", 123, []):
+        pattern = build_final_pattern(
+            user_id=invalid_user_id,
+        )
+
+        assert repository.store(pattern) is False
+        assert repository.count() == 0
+
+
+def test_same_behavior_is_not_consolidated_across_users():
+    repository = FinalPatternRepository()
+
+    user_a = build_final_pattern(
+        pattern_id="pattern-a",
+        session_id="session-a",
+        user_id="user-a",
+    )
+
+    user_b = build_final_pattern(
+        pattern_id="pattern-b",
+        session_id="session-b",
+        user_id="user-b",
+    )
+
+    assert repository.store(user_a) is True
+    assert repository.store(user_b) is True
+
+    assert repository.count() == 2
+    assert repository.knowledge_count() == 2
+
+    assert len(
+        repository.retrieve_patterns("user-a")
+    ) == 1
+
+    assert len(
+        repository.retrieve_patterns("user-b")
+    ) == 1
+
+    knowledge_a = repository.get_knowledge(
+        "knowledge-pattern-a"
+    )
+
+    knowledge_b = repository.get_knowledge(
+        "knowledge-pattern-b"
+    )
+
+    assert knowledge_a is not None
+    assert knowledge_b is not None
+    assert knowledge_a.occurrence_count == 1
+    assert knowledge_b.occurrence_count == 1
+
+    assert repository.validate_integrity() is True
+
+
+def test_userless_history_retrieval_fails_closed():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="user-a",
+    )
+
+    assert repository.store(
+        pattern
+    ) is True
+
+    assert repository.retrieve_patterns(
+        None
+    ) == []
+
+    assert repository.get_behavior_history(
+        None
+    ) == []
+
+    assert repository.get_latest_pattern(
+        None
+    ) is None
+
+    assert repository.get_baseline_pattern(
+        None
+    ) is None
+
+    assert repository.has_baseline(
+        None
+    ) is False
+
+
+def test_userless_reference_retrieval_fails_closed():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="user-a",
+    )
+
+    repository.store(pattern)
+
+    assert repository.retrieve_recent_patterns(
+        None,
+        limit=10,
+    ) == []
+
+    assert repository.get_pattern_references(
+        None
+    ) == []
+
+    assert repository.get_recent_pattern_references(
+        None,
+        limit=10,
+    ) == []
+
+    assert repository.retrieve_recent_patterns(
+        "   ",
+        limit=10,
+    ) == []
+
+    assert repository.get_pattern_references(
+        "   "
+    ) == []
+
+    assert repository.get_recent_pattern_references(
+        "   ",
+        limit=10,
+    ) == []
+
+
+def test_pattern_reference_cannot_cross_user_boundary():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="user-a",
+    )
+
+    repository.store(pattern)
+
+    stored = repository.get_all()[0]
+
+    reference = PatternReference(
+        pattern_id=stored.pattern_id,
+        session_id=stored.session_id,
+        user_id="user-b",
+        created_at=stored.created_at,
+    )
+
+    assert repository.resolve_pattern_reference(
+        reference
+    ) is None
+
+
+def test_repository_integrity_rejects_userless_state():
+    repository = FinalPatternRepository()
+
+    invalid_pattern = build_final_pattern(
+        user_id=None,
+    )
+
+    repository._patterns[
+        invalid_pattern.pattern_id
+    ] = invalid_pattern
+
+    assert repository.validate_integrity() is False

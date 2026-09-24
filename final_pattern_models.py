@@ -46,6 +46,12 @@ class FinalPattern:
         default_factory=dict
     )
 
+    pattern_version: int = 1
+
+    learning_metadata: Dict[str, Any] = field(
+        default_factory=dict
+    )
+
     observation_count: int = 0
 
     def snapshot(self) -> "FinalPattern":
