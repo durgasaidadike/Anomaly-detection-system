@@ -1294,6 +1294,49 @@ def test_each_user_gets_independent_baseline():
     assert repository.validate_integrity() is True
 
 
+def test_repeated_behavior_does_not_create_second_baseline():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+    )
+
+    # Same user, same behavioral identity, different session.
+    repeated = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+    )
+
+    assert repository.store(first) is True
+    assert repository.store(repeated) is True
+
+    baseline = repository.get_baseline_pattern(
+        "user-1"
+    )
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 2
+
+    metadata = repository.get_repository_metadata()
+
+    assert metadata["pattern_count"] == 1
+    assert metadata["knowledge_count"] == 1
+    assert metadata["user_count"] == 1
+    assert metadata["session_count"] == 2
+    assert metadata["occurrence_count"] == 1
+    assert metadata["baseline_count"] == 1
+
+    assert repository.validate_integrity() is True
+
+
 def test_repository_metadata_reflects_current_state():
     repository = FinalPatternRepository()
 
@@ -1327,6 +1370,86 @@ def test_repository_metadata_reflects_current_state():
     assert metadata["session_count"] == 1
     assert metadata["baseline_count"] == 1
     assert metadata["occurrence_count"] == 0
+
+    assert repository.validate_integrity() is True
+
+
+def test_failed_store_does_not_create_baseline(monkeypatch):
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    class FailingRecordedPatternIds(set):
+        def add(self, pattern_id):
+            raise RuntimeError(
+                "forced recorded pattern registration failure"
+            )
+
+    monkeypatch.setattr(
+        repository,
+        "_recorded_pattern_ids",
+        FailingRecordedPatternIds(),
+    )
+
+    assert repository.store(pattern) is False
+
+    assert repository.has_baseline("user-1") is False
+    assert repository.get_baseline_pattern("user-1") is None
+
+    assert repository.count() == 0
+    assert repository.knowledge_count() == 0
+
+    metadata = repository.get_repository_metadata()
+
+    assert metadata["user_count"] == 0
+    assert metadata["baseline_count"] == 0
+
+    assert repository.validate_integrity() is True
+
+
+def test_failed_store_preserves_existing_baseline(monkeypatch):
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern()
+
+    assert repository.store(first) is True
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        operation_type="DELETE",
+    )
+
+    class FailingRecordedPatternIds(set):
+        def add(self, pattern_id):
+            raise RuntimeError(
+                "forced recorded pattern registration failure"
+            )
+
+    monkeypatch.setattr(
+        repository,
+        "_recorded_pattern_ids",
+        FailingRecordedPatternIds(
+            repository._recorded_pattern_ids
+        ),
+    )
+
+    assert repository.store(second) is False
+
+    baseline = repository.get_baseline_pattern(
+        "user-1"
+    )
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    assert repository.has_baseline("user-1") is True
+
+    metadata = repository.get_repository_metadata()
+
+    assert metadata["pattern_count"] == 1
+    assert metadata["user_count"] == 1
+    assert metadata["baseline_count"] == 1
 
     assert repository.validate_integrity() is True
 

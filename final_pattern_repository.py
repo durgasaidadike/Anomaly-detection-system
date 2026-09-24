@@ -249,9 +249,18 @@ class FinalPatternRepository:
 
             # Rollback index state if snapshots were taken
             try:
-                self._user_pattern_index[
-                    pattern.user_id
-                ] = user_pattern_ids_snapshot
+                # Restore user history exactly. A user that had no
+                # history before this failed operation must not be left
+                # behind as a phantom user with an empty history.
+                if user_pattern_ids_snapshot:
+                    self._user_pattern_index[
+                        pattern.user_id
+                    ] = user_pattern_ids_snapshot
+                else:
+                    self._user_pattern_index.pop(
+                        pattern.user_id,
+                        None,
+                    )
 
                 if session_pattern_id_snapshot is not None:
                     self._session_pattern_index[
@@ -265,15 +274,25 @@ class FinalPatternRepository:
                     except KeyError:
                         pass
 
-                # Rollback baseline if it was set by this operation
-                if self._baseline_pattern_ids.get(pattern.user_id) == pattern_id:
+                # Restore the baseline to its pre-store state. A failed
+                # store must never leave a partially created baseline
+                # behind, and must never discard a pre-existing one.
+                if baseline_pattern_id_snapshot is None:
                     self._baseline_pattern_ids.pop(
                         pattern.user_id,
                         None,
                     )
+                else:
+                    self._baseline_pattern_ids[
+                        pattern.user_id
+                    ] = baseline_pattern_id_snapshot
             except NameError:
                 # Snapshots weren't taken yet, nothing to rollback
                 pass
+
+            logger.exception(
+                "Unexpected repository failure while storing FinalPattern"
+            )
 
             return False
 
@@ -668,7 +687,15 @@ class FinalPatternRepository:
                     return False
 
             # Every user with historical patterns has a baseline.
-            for user_id in self._user_pattern_index:
+            # A user entry without stored patterns is not a user with
+            # historical patterns and is therefore not required to have
+            # a baseline.
+            for user_id, indexed_ids in (
+                self._user_pattern_index.items()
+            ):
+                if not indexed_ids:
+                    continue
+
                 if user_id not in self._baseline_pattern_ids:
                     return False
 
