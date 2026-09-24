@@ -1187,6 +1187,150 @@ def test_integrity_detects_missing_user_history_reference():
     assert repository.validate_integrity() is False
 
 
+def test_first_final_pattern_creates_user_baseline():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="baseline-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    assert repository.has_baseline("user-1") is True
+
+    baseline = repository.get_baseline_pattern(
+        "user-1"
+    )
+
+    assert baseline is not None
+    assert baseline.pattern_id == "baseline-1"
+
+    assert repository.validate_integrity() is True
+
+
+def test_later_final_pattern_does_not_replace_baseline():
+    repository = FinalPatternRepository()
+
+    first = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    second = FinalPattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 2),
+        observations=[
+            {"operation_type": "DELETE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(first) is True
+    assert repository.store(second) is True
+
+    baseline = repository.get_baseline_pattern(
+        "user-1"
+    )
+
+    assert baseline is not None
+    assert baseline.pattern_id == "pattern-1"
+
+    assert repository.validate_integrity() is True
+
+
+def test_each_user_gets_independent_baseline():
+    repository = FinalPatternRepository()
+
+    user_one = FinalPattern(
+        pattern_id="user1-pattern",
+        session_id="user1-session",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    user_two = FinalPattern(
+        pattern_id="user2-pattern",
+        session_id="user2-session",
+        user_id="user-2",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "DELETE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(user_one) is True
+    assert repository.store(user_two) is True
+
+    assert (
+        repository.get_baseline_pattern("user-1").pattern_id
+        == "user1-pattern"
+    )
+
+    assert (
+        repository.get_baseline_pattern("user-2").pattern_id
+        == "user2-pattern"
+    )
+
+    assert repository.validate_integrity() is True
+
+
+def test_repository_metadata_reflects_current_state():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.get_repository_metadata() == {
+        "pattern_count": 0,
+        "knowledge_count": 0,
+        "user_count": 0,
+        "session_count": 0,
+        "occurrence_count": 0,
+        "baseline_count": 0,
+    }
+
+    assert repository.store(pattern) is True
+
+    metadata = repository.get_repository_metadata()
+
+    assert metadata["pattern_count"] == 1
+    assert metadata["knowledge_count"] == 1
+    assert metadata["user_count"] == 1
+    assert metadata["session_count"] == 1
+    assert metadata["baseline_count"] == 1
+    assert metadata["occurrence_count"] == 0
+
+    assert repository.validate_integrity() is True
+
+
 def test_integrity_detects_missing_knowledge():
     repository = FinalPatternRepository()
 

@@ -48,6 +48,10 @@ class FinalPatternRepository:
         self._occurrence_behavior_keys: Dict[str, BehavioralKey] = {}
         self._user_pattern_index: Dict[Optional[str], List[str]] = {}
         self._session_pattern_index: Dict[str, str] = {}
+        self._baseline_pattern_ids: Dict[
+            Optional[str],
+            str,
+        ] = {}
 
         self._behavioral_identity = (
             behavioral_identity
@@ -180,6 +184,12 @@ class FinalPatternRepository:
             if knowledge is None:
                 return False
 
+            # Determine if this is the user's first stored pattern
+            is_first_user_pattern = (
+                pattern.user_id
+                not in self._user_pattern_index
+            )
+
             # Take snapshots of index state before modification for rollback.
             user_pattern_ids_snapshot = list(
                 self._user_pattern_index.get(
@@ -191,6 +201,12 @@ class FinalPatternRepository:
             session_pattern_id_snapshot = (
                 self._session_pattern_index.get(
                     pattern.session_id
+                )
+            )
+
+            baseline_pattern_id_snapshot = (
+                self._baseline_pattern_ids.get(
+                    pattern.user_id
                 )
             )
 
@@ -216,6 +232,11 @@ class FinalPatternRepository:
             self._session_pattern_index[
                 pattern.session_id
             ] = pattern_id
+
+            if is_first_user_pattern:
+                self._baseline_pattern_ids[
+                    pattern.user_id
+                ] = pattern_id
 
             return True
 
@@ -243,6 +264,13 @@ class FinalPatternRepository:
                         ]
                     except KeyError:
                         pass
+
+                # Rollback baseline if it was set by this operation
+                if self._baseline_pattern_ids.get(pattern.user_id) == pattern_id:
+                    self._baseline_pattern_ids.pop(
+                        pattern.user_id,
+                        None,
+                    )
             except NameError:
                 # Snapshots weren't taken yet, nothing to rollback
                 pass
@@ -354,6 +382,49 @@ class FinalPatternRepository:
             return None
 
         return patterns[-1]
+
+    def get_baseline_pattern(
+        self,
+        user_id: Optional[str],
+    ) -> Optional[FinalPattern]:
+        """
+        Return the user's initial behavioral baseline.
+
+        The returned FinalPattern is detached from repository state.
+        """
+
+        pattern_id = self._baseline_pattern_ids.get(
+            user_id
+        )
+
+        if pattern_id is None:
+            return None
+
+        return self.get(pattern_id)
+
+    def has_baseline(
+        self,
+        user_id: Optional[str],
+    ) -> bool:
+        return user_id in self._baseline_pattern_ids
+
+    def get_repository_metadata(self) -> Dict[str, int]:
+        """
+        Return read-only repository statistics derived from current state.
+        """
+
+        return {
+            "pattern_count": len(self._patterns),
+            "knowledge_count": len(self._knowledge),
+            "user_count": len(self._user_pattern_index),
+            "session_count": len(self._session_pattern_index),
+            "occurrence_count": len(
+                self._recorded_occurrence_ids
+            ),
+            "baseline_count": len(
+                self._baseline_pattern_ids
+            ),
+        }
 
     def find_knowledge_by_key(
         self,
@@ -571,6 +642,34 @@ class FinalPatternRepository:
                 )
 
                 if pattern_id not in user_pattern_ids:
+                    return False
+
+            # Every baseline must point to an existing
+            # representative FinalPattern.
+            for user_id, baseline_pattern_id in (
+                self._baseline_pattern_ids.items()
+            ):
+                if baseline_pattern_id not in self._patterns:
+                    return False
+
+                baseline_pattern = self._patterns[
+                    baseline_pattern_id
+                ]
+
+                if baseline_pattern.user_id != user_id:
+                    return False
+
+                user_history = self._user_pattern_index.get(
+                    user_id,
+                    [],
+                )
+
+                if baseline_pattern_id not in user_history:
+                    return False
+
+            # Every user with historical patterns has a baseline.
+            for user_id in self._user_pattern_index:
+                if user_id not in self._baseline_pattern_ids:
                     return False
 
             return True
