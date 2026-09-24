@@ -1,3 +1,13 @@
+"""
+LEGACY MODULE -- DEPRECATED
+
+This module provides legacy JSON pattern storage from early prototypes.
+It is retained solely for backward compatibility with `behavior_profile_builder.py`
+and legacy test suites. New recovery mechanisms in Module 06 must use
+`final_pattern_repository.FinalPatternRepository` and `RepositoryPersistence`.
+"""
+
+
 import json
 import os
 

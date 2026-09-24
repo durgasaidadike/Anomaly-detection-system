@@ -1836,12 +1836,14 @@ def test_created_snapshot_is_detached_from_repository():
 
     # A snapshot is a detached logical container. Mutating it must never
     # modify the live repository.
-    snapshot.patterns[0] = build_final_pattern(
+    snapshot.patterns["pattern-1"] = build_final_pattern(
         pattern_id="pattern-tampered",
         session_id="session-tampered",
     )
 
-    snapshot.knowledge[0].occurrence_count = 99
+    snapshot.knowledge[
+        "knowledge-pattern-1"
+    ].occurrence_count = 99
 
     snapshot.pattern_index.clear()
     snapshot.session_pattern_index.clear()
@@ -1850,11 +1852,11 @@ def test_created_snapshot_is_detached_from_repository():
         "pattern-tampered"
     )
 
-    snapshot.recorded_pattern_ids.append(
+    snapshot.recorded_pattern_ids.add(
         "pattern-tampered"
     )
 
-    snapshot.recorded_occurrence_ids.append(
+    snapshot.recorded_occurrence_ids.add(
         "pattern-tampered"
     )
 
@@ -2036,11 +2038,12 @@ def test_corrupted_snapshot_is_rejected_without_changes():
     assert repository.store(pattern) is True
 
     corrupted = RepositorySnapshot(
-        patterns="not-a-list",
-        knowledge=None,
-        pattern_index="not-a-dict",
-        user_pattern_index=[],
-        session_pattern_index=None,
+        schema_version=1,
+        patterns="not-a-dict",  # type: ignore[arg-type]
+        knowledge=None,  # type: ignore[arg-type]
+        pattern_index="not-a-dict",  # type: ignore[arg-type]
+        user_pattern_index=[],  # type: ignore[arg-type]
+        session_pattern_index=None,  # type: ignore[arg-type]
         recorded_pattern_ids=[],
         recorded_occurrence_ids=[],
         occurrence_behavior_keys={},

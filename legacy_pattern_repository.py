@@ -1,3 +1,13 @@
+"""
+LEGACY MODULE -- DEPRECATED
+
+This module contains the legacy pattern repository implementation from
+earlier milestones. It is retained solely for backward compatibility with
+legacy test suites. New behavioral pattern storage and recovery must use
+`final_pattern_repository.FinalPatternRepository` and `RepositorySnapshot`.
+"""
+
+
 from collections import deque
 from pattern_store import save_patterns
 

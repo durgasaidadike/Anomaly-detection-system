@@ -1,4 +1,4 @@
-from pattern_repository import (
+from legacy_pattern_repository import (
     get_pattern_summary,
     reset_patterns,
     store_pattern,
@@ -9,7 +9,7 @@ def test_pattern_repository_stores_sample_records(monkeypatch):
     saved_snapshots = []
 
     monkeypatch.setattr(
-        "pattern_repository.save_patterns",
+        "legacy_pattern_repository.save_patterns",
         lambda snapshot: saved_snapshots.append(snapshot.copy()),
     )
 

@@ -20,7 +20,10 @@ from repository_search_result import RepositorySearchResult
 from repository_search_service import (
     RepositorySearchService,
 )
-from repository_snapshot import RepositorySnapshot
+from repository_snapshot import (
+    REPOSITORY_SNAPSHOT_SCHEMA_VERSION,
+    RepositorySnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -707,33 +710,55 @@ class FinalPatternRepository:
     # ------------------------------------------------------------------
     def create_snapshot(self) -> RepositorySnapshot:
         """
-        Create a detached snapshot of repository state for recovery.
+        Create a detached logical snapshot of repository state.
+
+        This is a logical snapshot only: it does not serialize to disk and
+        does not address any physical persistence layer. An invalid
+        repository is never allowed to produce a recovery snapshot.
+        """
+
+        if not self.validate_integrity():
+            raise RuntimeError(
+                "Cannot snapshot an invalid repository"
+            )
+
+        return self._build_snapshot()
+
+    def _build_snapshot(self) -> RepositorySnapshot:
+        """
+        Build a detached snapshot without validating repository state.
+
+        This is the raw state capture used by recovery rollback, so it
+        must never raise and must never mutate the repository.
         """
 
         return RepositorySnapshot(
-            patterns=copy.deepcopy(
-                list(self._patterns.values())
+            schema_version=(
+                REPOSITORY_SNAPSHOT_SCHEMA_VERSION
             ),
-            knowledge=copy.deepcopy(
-                list(self._knowledge.values())
+            patterns=copy.deepcopy(
+                self._patterns
             ),
             pattern_index=copy.deepcopy(
                 self._pattern_index
+            ),
+            knowledge=copy.deepcopy(
+                self._knowledge
+            ),
+            recorded_pattern_ids=copy.deepcopy(
+                self._recorded_pattern_ids
+            ),
+            recorded_occurrence_ids=copy.deepcopy(
+                self._recorded_occurrence_ids
+            ),
+            occurrence_behavior_keys=copy.deepcopy(
+                self._occurrence_behavior_keys
             ),
             user_pattern_index=copy.deepcopy(
                 self._user_pattern_index
             ),
             session_pattern_index=copy.deepcopy(
                 self._session_pattern_index
-            ),
-            recorded_pattern_ids=list(
-                self._recorded_pattern_ids
-            ),
-            recorded_occurrence_ids=list(
-                self._recorded_occurrence_ids
-            ),
-            occurrence_behavior_keys=copy.deepcopy(
-                self._occurrence_behavior_keys
             ),
             baseline_pattern_ids=copy.deepcopy(
                 self._baseline_pattern_ids
@@ -745,46 +770,10 @@ class FinalPatternRepository:
         snapshot: RepositorySnapshot,
     ) -> bool:
         """
-        Structurally validate a recovery snapshot.
-
-        This is structural validation only. It must not perform
-        behavioral interpretation of the snapshot contents.
+        Validate a recovery snapshot without modifying repository state.
         """
 
-        if snapshot is None:
-            return False
-
-        if not isinstance(
-            snapshot,
-            RepositorySnapshot,
-        ):
-            return False
-
-        if not isinstance(snapshot.patterns, list):
-            return False
-
-        if not isinstance(snapshot.knowledge, list):
-            return False
-
-        if not isinstance(
-            snapshot.pattern_index,
-            dict,
-        ):
-            return False
-
-        if not isinstance(
-            snapshot.user_pattern_index,
-            dict,
-        ):
-            return False
-
-        if not isinstance(
-            snapshot.session_pattern_index,
-            dict,
-        ):
-            return False
-
-        return True
+        return self._validate_snapshot(snapshot)
 
     def restore_snapshot(
         self,
@@ -793,16 +782,17 @@ class FinalPatternRepository:
         """
         Restore repository logical state atomically.
 
-        A failed restore operation must never leave the repository
-        partially restored. The previous logical state is captured
-        before publication and re-applied if recovery fails.
+        Live state is never mutated until the snapshot has passed
+        validation on temporary state. If publication still fails
+        integrity validation, the previous logical state is re-applied,
+        so a failed recovery can never corrupt historical knowledge.
         """
 
-        if not self.validate_snapshot(snapshot):
+        if not self._validate_snapshot(snapshot):
             return False
 
         try:
-            previous_snapshot = self.create_snapshot()
+            previous_snapshot = self._build_snapshot()
         except Exception:
             logger.exception(
                 "Failed to capture pre-restore repository state"
@@ -1382,15 +1372,13 @@ class FinalPatternRepository:
         leave the repository partially restored.
         """
 
-        candidate_patterns = {
-            pattern.pattern_id: copy.deepcopy(pattern)
-            for pattern in snapshot.patterns
-        }
+        candidate_patterns = copy.deepcopy(
+            snapshot.patterns
+        )
 
-        candidate_knowledge = {
-            knowledge.knowledge_id: copy.deepcopy(knowledge)
-            for knowledge in snapshot.knowledge
-        }
+        candidate_knowledge = copy.deepcopy(
+            snapshot.knowledge
+        )
 
         candidate_pattern_index = copy.deepcopy(
             snapshot.pattern_index
@@ -1438,15 +1426,156 @@ class FinalPatternRepository:
             candidate_baseline_pattern_ids
         )
 
-        # The search service holds live references to the published state
-        # containers, so it must be rebuilt against the restored state in
-        # order to resume normal operation after recovery.
+        self._rebind_search_service()
+
+    def _rebind_search_service(self) -> None:
+        """
+        Rebind the behavioral search boundary to current state.
+
+        The search service holds live references to repository state
+        containers, so it must be rebound whenever those containers are
+        replaced during recovery.
+        """
+
         self._search_service = RepositorySearchService(
             patterns=self._patterns,
             pattern_index=self._pattern_index,
             knowledge=self._knowledge,
             behavioral_identity=self._behavioral_identity,
         )
+
+    def _validate_snapshot(
+        self,
+        snapshot: RepositorySnapshot,
+    ) -> bool:
+        """
+        Validate a recovery snapshot before any live state is replaced.
+
+        Validation runs against temporary state, so a rejected snapshot
+        can never leave the live repository partially restored. Only
+        structural and consistency rules are applied here: the snapshot
+        is never interpreted behaviorally.
+        """
+
+        if not isinstance(
+            snapshot,
+            RepositorySnapshot,
+        ):
+            return False
+
+        if (
+            snapshot.schema_version
+            != REPOSITORY_SNAPSHOT_SCHEMA_VERSION
+        ):
+            return False
+
+        if not isinstance(snapshot.patterns, dict):
+            return False
+
+        if not isinstance(snapshot.pattern_index, dict):
+            return False
+
+        if not isinstance(snapshot.knowledge, dict):
+            return False
+
+        if not isinstance(
+            snapshot.recorded_pattern_ids,
+            (set, frozenset, list, tuple),
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.recorded_occurrence_ids,
+            (set, frozenset, list, tuple),
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.occurrence_behavior_keys,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.user_pattern_index,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.session_pattern_index,
+            dict,
+        ):
+            return False
+
+        if not isinstance(
+            snapshot.baseline_pattern_ids,
+            dict,
+        ):
+            return False
+
+        try:
+            # Every recorded occurrence must carry a behavioral identity
+            # and must resolve to an existing representative pattern.
+            if set(
+                snapshot.recorded_occurrence_ids
+            ) != set(
+                snapshot.occurrence_behavior_keys
+            ):
+                return False
+
+            for behavior_key in (
+                snapshot.occurrence_behavior_keys.values()
+            ):
+                representative_pattern_id = (
+                    snapshot.pattern_index.get(
+                        behavior_key
+                    )
+                )
+
+                if representative_pattern_id is None:
+                    return False
+
+                if (
+                    representative_pattern_id
+                    not in snapshot.patterns
+                ):
+                    return False
+
+            # Every stored pattern must satisfy the repository admission
+            # contract, and must be keyed by its own pattern ID.
+            for pattern_id, pattern in (
+                snapshot.patterns.items()
+            ):
+                if pattern_id != getattr(
+                    pattern,
+                    "pattern_id",
+                    None,
+                ):
+                    return False
+
+                if not self._validate_final_pattern(
+                    pattern
+                ):
+                    return False
+
+            # The snapshot must describe a consistent repository once
+            # applied. Validation uses temporary state only.
+            temporary = FinalPatternRepository(
+                behavioral_identity=(
+                    self._behavioral_identity
+                ),
+            )
+
+            temporary._apply_snapshot_state(snapshot)
+
+            if not temporary.validate_integrity():
+                return False
+
+        except Exception:
+            return False
+
+        return True
 
     @staticmethod
     def _is_valid_user_id(
