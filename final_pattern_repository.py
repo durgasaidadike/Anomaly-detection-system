@@ -46,6 +46,8 @@ class FinalPatternRepository:
         self._recorded_pattern_ids = set()
         self._recorded_occurrence_ids = set()
         self._occurrence_behavior_keys: Dict[str, BehavioralKey] = {}
+        self._user_pattern_index: Dict[Optional[str], List[str]] = {}
+        self._session_pattern_index: Dict[str, str] = {}
 
         self._behavioral_identity = (
             behavioral_identity
@@ -147,6 +149,23 @@ class FinalPatternRepository:
             # ------------------------------------------------------------------
             # New behavioral identity
             # ------------------------------------------------------------------
+            # Check session-ID uniqueness for genuinely new representative
+            existing_session_pattern_id = (
+                self._session_pattern_index.get(
+                    pattern.session_id
+                )
+            )
+
+            if existing_session_pattern_id is not None:
+                logger.warning(
+                    "Rejected FinalPattern %s: session %s is already "
+                    "associated with pattern %s",
+                    pattern_id,
+                    pattern.session_id,
+                    existing_session_pattern_id,
+                )
+                return False
+
             stored_pattern = copy.deepcopy(pattern)
 
             # Create knowledge before publishing the new repository state.
@@ -161,16 +180,73 @@ class FinalPatternRepository:
             if knowledge is None:
                 return False
 
+            # Take snapshots of index state before modification for rollback.
+            user_pattern_ids_snapshot = list(
+                self._user_pattern_index.get(
+                    pattern.user_id,
+                    [],
+                )
+            )
+
+            session_pattern_id_snapshot = (
+                self._session_pattern_index.get(
+                    pattern.session_id
+                )
+            )
+
             # Publish the new state only after every required operation above
             # has succeeded.
+            user_pattern_ids = list(
+                self._user_pattern_index.get(
+                    pattern.user_id,
+                    [],
+                )
+            )
+            user_pattern_ids.append(pattern_id)
+
             self._patterns[pattern_id] = stored_pattern
             self._pattern_index[pattern_key] = pattern_id
             self._knowledge[knowledge.knowledge_id] = knowledge
             self._recorded_pattern_ids.add(pattern_id)
 
+            self._user_pattern_index[
+                pattern.user_id
+            ] = user_pattern_ids
+
+            self._session_pattern_index[
+                pattern.session_id
+            ] = pattern_id
+
             return True
 
         except Exception:
+            # Rollback all repository state modifications if they were made
+            self._patterns.pop(pattern_id, None)
+            self._pattern_index.pop(pattern_key, None)
+            self._knowledge.pop(f"knowledge-{pattern_id}", None)
+            self._recorded_pattern_ids.discard(pattern_id)
+
+            # Rollback index state if snapshots were taken
+            try:
+                self._user_pattern_index[
+                    pattern.user_id
+                ] = user_pattern_ids_snapshot
+
+                if session_pattern_id_snapshot is not None:
+                    self._session_pattern_index[
+                        pattern.session_id
+                    ] = session_pattern_id_snapshot
+                else:
+                    try:
+                        del self._session_pattern_index[
+                            pattern.session_id
+                        ]
+                    except KeyError:
+                        pass
+            except NameError:
+                # Snapshots weren't taken yet, nothing to rollback
+                pass
+
             return False
 
     def get(
@@ -205,6 +281,79 @@ class FinalPatternRepository:
             key=lambda pattern: (pattern.created_at, pattern.pattern_id),
         )
         return [copy.deepcopy(pattern) for pattern in patterns]
+
+    def retrieve_patterns(
+        self,
+        user_id: Optional[str],
+    ) -> List[FinalPattern]:
+        """
+        Return chronological historical FinalPatterns for one user.
+
+        Only stored representative FinalPatterns are returned.
+        Returned objects are independent copies and cannot mutate
+        repository state.
+        """
+
+        try:
+            pattern_ids = self._user_pattern_index.get(
+                user_id,
+                [],
+            )
+
+            patterns = []
+
+            for pid in pattern_ids:
+                pattern = self._patterns.get(
+                    pid
+                )
+
+                if pattern is not None:
+                    patterns.append(pattern)
+
+            patterns.sort(
+                key=lambda pattern: (
+                    pattern.created_at,
+                    pattern.pattern_id,
+                )
+            )
+
+            return [
+                copy.deepcopy(pattern)
+                for pattern in patterns
+            ]
+
+        except Exception:
+            logger.exception(
+                "Failed to retrieve historical patterns for user %r",
+                user_id,
+            )
+            return []
+
+    def get_behavior_history(
+        self,
+        user_id: Optional[str],
+    ) -> List[FinalPattern]:
+        """
+        Return the historical behavioral FinalPattern collection
+        associated with one user.
+        """
+
+        return self.retrieve_patterns(user_id)
+
+    def get_latest_pattern(
+        self,
+        user_id: Optional[str],
+    ) -> Optional[FinalPattern]:
+        """
+        Return the most recent historical FinalPattern for a user.
+        """
+
+        patterns = self.retrieve_patterns(user_id)
+
+        if not patterns:
+            return None
+
+        return patterns[-1]
 
     def find_knowledge_by_key(
         self,
@@ -386,6 +535,44 @@ class FinalPatternRepository:
                 ):
                     return False
 
+            # Every user-indexed pattern must exist.
+            for user_id, indexed_ids in (
+                self._user_pattern_index.items()
+            ):
+                for pattern_id in indexed_ids:
+                    if pattern_id not in self._patterns:
+                        return False
+
+                    pattern = self._patterns[
+                        pattern_id
+                    ]
+
+                    if pattern.user_id != user_id:
+                        return False
+
+            # Every session reference must point to an accepted pattern
+            # or recorded occurrence.
+            for session_id, pattern_id in (
+                self._session_pattern_index.items()
+            ):
+                if (
+                    pattern_id not in self._patterns
+                    and pattern_id not in self._recorded_occurrence_ids
+                ):
+                    return False
+
+            # Every stored representative has a user-history reference.
+            for pattern_id, pattern in (
+                self._patterns.items()
+            ):
+                user_pattern_ids = self._user_pattern_index.get(
+                    pattern.user_id,
+                    [],
+                )
+
+                if pattern_id not in user_pattern_ids:
+                    return False
+
             return True
 
         except Exception:
@@ -537,6 +724,13 @@ class FinalPatternRepository:
 
         knowledge_snapshot = knowledge.snapshot()
 
+        user_pattern_ids_snapshot = list(
+            self._user_pattern_index.get(
+                incoming_pattern.user_id,
+                [],
+            )
+        )
+
         try:
             knowledge.record_occurrence(
                 incoming_pattern.created_at
@@ -545,15 +739,70 @@ class FinalPatternRepository:
             self._recorded_occurrence_ids.add(
                 incoming_pattern.pattern_id
             )
-            self._occurrence_behavior_keys[incoming_pattern.pattern_id] = (
-                incoming_key
+
+            self._occurrence_behavior_keys[
+                incoming_pattern.pattern_id
+            ] = incoming_key
+
+            user_pattern_ids = list(
+                self._user_pattern_index.get(
+                    incoming_pattern.user_id,
+                    [],
+                )
             )
+
+            if representative_pattern_id not in user_pattern_ids:
+                user_pattern_ids.append(
+                    representative_pattern_id
+                )
+
+            self._user_pattern_index[
+                incoming_pattern.user_id
+            ] = user_pattern_ids
+
+            self._session_pattern_index[
+                incoming_pattern.session_id
+            ] = incoming_pattern.pattern_id
 
             return True
 
         except Exception:
             self._knowledge[knowledge_id] = (
                 knowledge_snapshot
+            )
+
+            self._recorded_occurrence_ids.discard(
+                incoming_pattern.pattern_id
+            )
+
+            self._occurrence_behavior_keys.pop(
+                incoming_pattern.pattern_id,
+                None,
+            )
+
+            self._user_pattern_index[
+                incoming_pattern.user_id
+            ] = user_pattern_ids_snapshot
+
+            # Only remove the session mapping if this operation
+            # created it.
+            if (
+                self._session_pattern_index.get(
+                    incoming_pattern.session_id
+                )
+                == incoming_pattern.pattern_id
+            ):
+                try:
+                    del self._session_pattern_index[
+                        incoming_pattern.session_id
+                    ]
+                except KeyError:
+                    pass
+
+            logger.exception(
+                "Failed to record repeated behavior for "
+                "representative %s",
+                representative_pattern_id,
             )
 
             return False

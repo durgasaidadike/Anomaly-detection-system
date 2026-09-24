@@ -899,6 +899,209 @@ def test_multiple_behaviors_preserve_repository_integrity():
     assert repository.validate_integrity() is True
 
 
+def test_retrieve_patterns_isolated_by_user():
+    repository = FinalPatternRepository()
+
+    user_one_pattern = FinalPattern(
+        pattern_id="user1-pattern",
+        session_id="user1-session",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1, 10, 0, 0),
+        observations=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": datetime(2026, 1, 1, 10, 0, 0),
+                "file_extension": ".py",
+                "directory": "/user1",
+            }
+        ],
+        observation_count=1,
+    )
+
+    user_two_pattern = FinalPattern(
+        pattern_id="user2-pattern",
+        session_id="user2-session",
+        user_id="user-2",
+        created_at=datetime(2026, 1, 2, 10, 0, 0),
+        observations=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": datetime(2026, 1, 2, 10, 0, 0),
+                "file_extension": ".py",
+                "directory": "/user2",
+            }
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(user_one_pattern) is True
+    assert repository.store(user_two_pattern) is True
+
+    user_one_history = repository.retrieve_patterns("user-1")
+    user_two_history = repository.retrieve_patterns("user-2")
+
+    assert [
+        pattern.pattern_id
+        for pattern in user_one_history
+    ] == ["user1-pattern"]
+
+    assert [
+        pattern.pattern_id
+        for pattern in user_two_history
+    ] == ["user2-pattern"]
+
+    assert repository.validate_integrity() is True
+
+
+def test_retrieve_patterns_returns_user_history_chronologically():
+    repository = FinalPatternRepository()
+
+    patterns = [
+        FinalPattern(
+            pattern_id="pattern-3",
+            session_id="session-3",
+            user_id="user-1",
+            created_at=datetime(2026, 1, 3),
+            observations=[
+                {"operation_type": "DELETE"}
+            ],
+            observation_count=1,
+        ),
+        FinalPattern(
+            pattern_id="pattern-1",
+            session_id="session-1",
+            user_id="user-1",
+            created_at=datetime(2026, 1, 1),
+            observations=[
+                {"operation_type": "CREATE"}
+            ],
+            observation_count=1,
+        ),
+        FinalPattern(
+            pattern_id="pattern-2",
+            session_id="session-2",
+            user_id="user-1",
+            created_at=datetime(2026, 1, 2),
+            observations=[
+                {"operation_type": "MODIFY"}
+            ],
+            observation_count=1,
+        ),
+    ]
+
+    for pattern in patterns:
+        assert repository.store(pattern) is True
+
+    history = repository.get_behavior_history("user-1")
+
+    assert [
+        pattern.pattern_id
+        for pattern in history
+    ] == [
+        "pattern-1",
+        "pattern-2",
+        "pattern-3",
+    ]
+
+
+def test_get_latest_pattern_returns_latest_user_pattern():
+    repository = FinalPatternRepository()
+
+    older = FinalPattern(
+        pattern_id="older",
+        session_id="session-older",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    newer = FinalPattern(
+        pattern_id="newer",
+        session_id="session-newer",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 5),
+        observations=[
+            {"operation_type": "DELETE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(newer) is True
+    assert repository.store(older) is True
+
+    latest = repository.get_latest_pattern("user-1")
+
+    assert latest is not None
+    assert latest.pattern_id == "newer"
+
+
+def test_duplicate_session_cannot_store_different_final_pattern():
+    repository = FinalPatternRepository()
+
+    first = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="same-session",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    duplicate_session = FinalPattern(
+        pattern_id="pattern-2",
+        session_id="same-session",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 2),
+        observations=[
+            {"operation_type": "DELETE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(first) is True
+    assert repository.store(duplicate_session) is False
+
+    assert repository.count() == 1
+    assert repository.validate_integrity() is True
+
+
+def test_retrieved_history_is_detached_from_repository():
+    repository = FinalPatternRepository()
+
+    pattern = FinalPattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+        created_at=datetime(2026, 1, 1),
+        observations=[
+            {"operation_type": "CREATE"}
+        ],
+        observation_count=1,
+    )
+
+    assert repository.store(pattern) is True
+
+    history = repository.retrieve_patterns("user-1")
+
+    assert len(history) == 1
+
+    history[0].observations[0]["operation_type"] = "DELETE"
+
+    reread = repository.retrieve_patterns("user-1")
+
+    assert (
+        reread[0].observations[0]["operation_type"]
+        == "CREATE"
+    )
+
+    assert repository.validate_integrity() is True
+
+
 def test_integrity_detects_orphaned_pattern_index():
     repository = FinalPatternRepository()
 
@@ -941,6 +1144,45 @@ def test_integrity_detects_missing_recorded_id():
     assert repository.store(pattern)
 
     repository._recorded_pattern_ids.clear()
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_user_index_mismatch():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    # Corrupt user index by adding a non-existent pattern
+    repository._user_pattern_index["user-1"].append("non-existent")
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_session_index_mismatch():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    # Corrupt session index by pointing to non-existent pattern
+    repository._session_pattern_index["session-1"] = "non-existent"
+
+    assert repository.validate_integrity() is False
+
+
+def test_integrity_detects_missing_user_history_reference():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern()
+
+    assert repository.store(pattern)
+
+    # Remove pattern from user index
+    repository._user_pattern_index["user-1"] = []
 
     assert repository.validate_integrity() is False
 
