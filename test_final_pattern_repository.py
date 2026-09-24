@@ -3,6 +3,10 @@ from datetime import datetime
 from behavioral_identity import BehavioralIdentity
 from final_pattern_models import FinalPattern
 from final_pattern_repository import FinalPatternRepository
+from pattern_admission import (
+    PatternAdmissionAction,
+    PatternAdmissionDecision,
+)
 from pattern_reference import PatternReference
 from repository_search_result import (
     RepositorySearchResult,
@@ -151,7 +155,12 @@ def test_repeated_behavior_strengthen_knowledge():
     )
 
     assert repository.store(first)
-    assert repository.store(second)
+
+    # Consolidation is an explicit caller decision.
+    assert repository.record_occurrence(
+        "pattern-1",
+        second,
+    )
 
     # Only one pattern stored, but knowledge strengthened
     assert repository.count() == 1
@@ -412,7 +421,10 @@ def test_find_representative_pattern_returns_existing_pattern():
     )
 
     assert repository.store(first)
-    assert repository.store(repeated)
+    assert repository.record_occurrence(
+        "pattern-1",
+        repeated,
+    )
 
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
@@ -522,7 +534,10 @@ def test_search_returns_representative_for_repeated_behavior():
     )
 
     assert repository.store(first)
-    assert repository.store(repeated)
+    assert repository.record_occurrence(
+        "pattern-1",
+        repeated,
+    )
 
     result = repository.search(repeated)
 
@@ -639,7 +654,12 @@ def test_different_pattern_id_same_behavior_counts_as_occurrence():
     )
 
     assert repository.store(first)
-    assert repository.store(second)
+
+    # The caller already decided that this is another occurrence.
+    assert repository.record_occurrence(
+        "pattern-1",
+        second,
+    )
 
     knowledge = repository.get_knowledge(
         "knowledge-pattern-1"
@@ -663,7 +683,10 @@ def test_different_pattern_id_same_behavior_is_not_stored_twice():
     )
 
     assert repository.store(first)
-    assert repository.store(second)
+    assert repository.record_occurrence(
+        "pattern-1",
+        second,
+    )
 
     assert repository.count() == 1
     assert repository.contains("pattern-1")
@@ -676,6 +699,7 @@ def test_failed_repeated_recording_does_not_mark_pattern_as_recorded():
             self,
             representative_pattern_id,
             incoming_pattern,
+            incoming_key,
         ):
             return False
 
@@ -692,7 +716,10 @@ def test_failed_repeated_recording_does_not_mark_pattern_as_recorded():
     )
 
     assert repository.store(first)
-    assert not repository.store(second)
+    assert repository.record_occurrence(
+        "pattern-1",
+        second,
+    ) is False
 
     assert "pattern-2" not in (
         repository._recorded_pattern_ids
@@ -867,7 +894,10 @@ def test_repeated_behavior_preserves_repository_integrity():
     )
 
     assert repository.store(first)
-    assert repository.store(second)
+    assert repository.record_occurrence(
+        "pattern-1",
+        second,
+    )
 
     assert repository.validate_integrity() is True
 
@@ -1312,7 +1342,10 @@ def test_repeated_behavior_does_not_create_second_baseline():
     )
 
     assert repository.store(first) is True
-    assert repository.store(repeated) is True
+    assert repository.record_occurrence(
+        "pattern-1",
+        repeated,
+    ) is True
 
     baseline = repository.get_baseline_pattern(
         "user-1"
@@ -1577,7 +1610,10 @@ def test_occurrence_id_reuse_for_different_behavior_is_rejected():
         operation_type="DELETE",
     )
     assert repository.store(first) is True
-    assert repository.store(repeated) is True
+    assert repository.record_occurrence(
+        "pattern-1",
+        repeated,
+    ) is True
     assert repository.store(conflicting) is False
     assert repository.count() == 1
     assert repository.validate_integrity() is True
@@ -2362,3 +2398,160 @@ def test_repository_integrity_rejects_userless_state():
     ] = invalid_pattern
 
     assert repository.validate_integrity() is False
+
+
+def test_admit_store_new_creates_final_pattern():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        pattern_id="pattern-1",
+        user_id="user-1",
+    )
+
+    decision = PatternAdmissionDecision(
+        action=PatternAdmissionAction.STORE_NEW,
+    )
+
+    assert repository.admit(
+        pattern,
+        decision,
+    ) is True
+
+    assert repository.count() == 1
+
+
+def test_admit_record_occurrence_strengthens_knowledge():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+    )
+
+    assert repository.store(first) is True
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        user_id="user-1",
+    )
+
+    decision = PatternAdmissionDecision(
+        action=PatternAdmissionAction.RECORD_OCCURRENCE,
+        target_pattern_id="pattern-1",
+    )
+
+    assert repository.admit(
+        second,
+        decision,
+    ) is True
+
+    assert repository.count() == 1
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 2
+
+
+def test_store_does_not_implicitly_consolidate_existing_behavior():
+    repository = FinalPatternRepository()
+
+    first = build_final_pattern(
+        pattern_id="pattern-1",
+        session_id="session-1",
+        user_id="user-1",
+    )
+
+    second = build_final_pattern(
+        pattern_id="pattern-2",
+        session_id="session-2",
+        user_id="user-1",
+    )
+
+    assert repository.store(first) is True
+
+    assert repository.store(second) is False
+
+    assert repository.count() == 1
+
+    knowledge = repository.get_knowledge(
+        "knowledge-pattern-1"
+    )
+
+    assert knowledge is not None
+    assert knowledge.occurrence_count == 1
+
+
+def test_admit_reject_does_not_modify_repository():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="user-1",
+    )
+
+    decision = PatternAdmissionDecision(
+        action=PatternAdmissionAction.REJECT,
+        reason=(
+            "behavioral change requires further evaluation"
+        ),
+    )
+
+    assert repository.admit(
+        pattern,
+        decision,
+    ) is False
+
+    assert repository.count() == 0
+
+
+def test_record_occurrence_requires_target_pattern():
+    repository = FinalPatternRepository()
+
+    pattern = build_final_pattern(
+        user_id="user-1",
+    )
+
+    decision = PatternAdmissionDecision(
+        action=PatternAdmissionAction.RECORD_OCCURRENCE,
+    )
+
+    assert repository.admit(
+        pattern,
+        decision,
+    ) is False
+
+    assert repository.count() == 0
+
+
+def test_record_occurrence_rejects_cross_user_target():
+    repository = FinalPatternRepository()
+
+    user_a = build_final_pattern(
+        pattern_id="pattern-a",
+        session_id="session-a",
+        user_id="user-a",
+    )
+
+    user_b = build_final_pattern(
+        pattern_id="pattern-b",
+        session_id="session-b",
+        user_id="user-b",
+    )
+
+    assert repository.store(user_a) is True
+
+    decision = PatternAdmissionDecision(
+        action=PatternAdmissionAction.RECORD_OCCURRENCE,
+        target_pattern_id="pattern-a",
+    )
+
+    assert repository.admit(
+        user_b,
+        decision,
+    ) is False
+
+    assert repository.count() == 1

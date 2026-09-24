@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from candidate_pattern_models import CandidatePattern
+from final_pattern_factory import FinalPatternFactory
 from final_pattern_repository import FinalPatternRepository
 from final_pattern_repository_adapter import (
     FinalPatternRepositoryAdapter,
@@ -143,13 +144,29 @@ def test_repeated_behavior_updates_knowledge():
     )
 
     assert adapter.store(first)
-    assert adapter.store(second)
+
+    # The repository refuses implicit consolidation: a repeated handoff is
+    # only an occurrence once the intelligence layer explicitly decides.
+    assert adapter.store(second) is False
 
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
 
+    stored_pattern = repository.get_all()[0]
+
+    repeated_pattern = FinalPatternFactory().create(
+        second
+    )
+
+    assert repeated_pattern is not None
+
+    assert repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
+    ) is True
+
     knowledge = repository.get_knowledge(
-        "knowledge-" + repository.get_all()[0].pattern_id
+        "knowledge-" + stored_pattern.pattern_id
     )
 
     assert knowledge is not None

@@ -11,6 +11,10 @@ from behavioral_identity import (
 )
 from behavioral_knowledge import BehavioralKnowledge
 from final_pattern_models import FinalPattern
+from pattern_admission import (
+    PatternAdmissionAction,
+    PatternAdmissionDecision,
+)
 from pattern_reference import PatternReference
 from repository_search_result import RepositorySearchResult
 from repository_search_service import (
@@ -135,19 +139,19 @@ class FinalPatternRepository:
             # ------------------------------------------------------------------
             # Repeated behavioral identity
             # ------------------------------------------------------------------
+            # store() persists new historical Final Patterns only. Whether a
+            # repeated behavioral identity should strengthen existing
+            # behavioral knowledge is decided outside this repository and
+            # requested explicitly through record_occurrence().
             if pattern_key in self._pattern_index:
-                existing_pattern_id = self._pattern_index[
-                    pattern_key
-                ]
-
-                if pattern_id in self._recorded_occurrence_ids:
-                    return True
-
-                return self._record_repeated_behavior(
-                    existing_pattern_id,
-                    pattern,
-                    pattern_key,
+                logger.warning(
+                    "Rejected FinalPattern %s: behavioral identity is "
+                    "already represented by pattern %s; consolidation "
+                    "must be requested explicitly",
+                    pattern_id,
+                    self._pattern_index[pattern_key],
                 )
+                return False
 
             # ------------------------------------------------------------------
             # New behavioral identity
@@ -294,6 +298,134 @@ class FinalPatternRepository:
             )
 
             return False
+
+    def record_occurrence(
+        self,
+        representative_pattern_id: str,
+        incoming_pattern: FinalPattern,
+    ) -> bool:
+        """
+        Persist a caller-decided occurrence of an existing blueprint.
+
+        The repository persists a consolidation that has already been
+        decided elsewhere. It does not decide whether the behavior is
+        repeated, does not score similarity, drift, or confidence, and
+        never mutates the stored historical FinalPattern.
+        """
+
+        if not self._validate_final_pattern(
+            incoming_pattern
+        ):
+            return False
+
+        representative = self._patterns.get(
+            representative_pattern_id
+        )
+
+        if representative is None:
+            return False
+
+        if (
+            representative.user_id
+            != incoming_pattern.user_id
+        ):
+            return False
+
+        # A stored representative is historical memory and must never be
+        # re-declared as a mere occurrence of another blueprint.
+        if incoming_pattern.pattern_id in self._patterns:
+            logger.warning(
+                "Rejected occurrence %s: pattern ID is already a stored "
+                "representative",
+                incoming_pattern.pattern_id,
+            )
+            return False
+
+        incoming_key = (
+            self._behavioral_identity.build_key(
+                incoming_pattern
+            )
+        )
+
+        # The declared target must actually represent the incoming
+        # behavior. Without this structural check a mis-targeted decision
+        # would corrupt repository integrity.
+        if (
+            self._pattern_index.get(incoming_key)
+            != representative_pattern_id
+        ):
+            logger.warning(
+                "Rejected occurrence %s: behavioral identity does not "
+                "belong to representative %s",
+                incoming_pattern.pattern_id,
+                representative_pattern_id,
+            )
+            return False
+
+        # Recording the same occurrence again is idempotent when it refers
+        # to the same behavioral identity.
+        if (
+            incoming_pattern.pattern_id
+            in self._recorded_occurrence_ids
+        ):
+            recorded_key = self._occurrence_behavior_keys.get(
+                incoming_pattern.pattern_id
+            )
+
+            if recorded_key == incoming_key:
+                return True
+
+            logger.warning(
+                "Rejected occurrence %s: occurrence ID reused for "
+                "different behavioral identity",
+                incoming_pattern.pattern_id,
+            )
+            return False
+
+        return self._record_repeated_behavior(
+            representative_pattern_id,
+            incoming_pattern,
+            incoming_key,
+        )
+
+    def admit(
+        self,
+        pattern: FinalPattern,
+        decision: PatternAdmissionDecision,
+    ) -> bool:
+        """
+        Repository admission boundary.
+
+        The repository trusts only the action already decided by the
+        behavioral intelligence layer. It never evaluates similarity,
+        drift, or confidence, and never infers an action by itself.
+        """
+
+        if not isinstance(
+            decision,
+            PatternAdmissionDecision,
+        ):
+            return False
+
+        if decision.action is PatternAdmissionAction.REJECT:
+            return False
+
+        if decision.action is PatternAdmissionAction.STORE_NEW:
+            return self.store(pattern)
+
+        if (
+            decision.action
+            is PatternAdmissionAction.RECORD_OCCURRENCE
+        ):
+            if not decision.target_pattern_id:
+                return False
+
+            return self.record_occurrence(
+                decision.target_pattern_id,
+                pattern,
+            )
+
+        return False
 
     def get(
         self,

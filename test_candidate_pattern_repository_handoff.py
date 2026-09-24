@@ -252,13 +252,34 @@ def test_repeated_behavior_strengthens_repository_knowledge():
 
     assert finalized_b is not None
 
+    # The repository never consolidates implicitly: the repeated handoff is
+    # refused until the intelligence layer explicitly decides.
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
+
+    stored_pattern = repository.get_all()[0]
+
+    repeated_pattern = replace(
+        stored_pattern,
+        pattern_id=(
+            f"{stored_pattern.pattern_id}-occurrence"
+        ),
+        session_id=session_b,
+        created_at=start + timedelta(hours=1),
+    )
+
+    assert repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
+    ) is True
 
     knowledge = repository.get_all_knowledge()
 
     assert len(knowledge) == 1
     assert knowledge[0].occurrence_count == 2
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
 
     assert repository.validate_integrity() is True
 
@@ -305,6 +326,32 @@ def test_repeated_behavior_does_not_create_orphan_recorded_pattern_id():
 
     assert manager_a.finalizePattern(session_a) is not None
     assert manager_b.finalizePattern(session_b) is not None
+
+    assert repository.count() == 1
+    assert repository.knowledge_count() == 1
+
+    # Recording the occurrence explicitly must not leave bookkeeping behind
+    # that is absent from stored patterns.
+    stored_pattern = repository.get_all()[0]
+
+    repeated_pattern = replace(
+        stored_pattern,
+        pattern_id=(
+            f"{stored_pattern.pattern_id}-orphan-check"
+        ),
+        session_id=session_b,
+        created_at=start + timedelta(hours=1),
+    )
+
+    assert repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
+    ) is True
+
+    assert (
+        repeated_pattern.pattern_id
+        in repository._recorded_occurrence_ids
+    )
 
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
@@ -362,6 +409,25 @@ def test_repeated_behavior_same_pattern_id_is_idempotent():
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
 
+    stored_patterns = repository.get_all()
+    assert len(stored_patterns) == 1
+
+    representative = stored_patterns[0]
+
+    repeated_pattern = replace(
+        representative,
+        pattern_id=(
+            f"{representative.pattern_id}-idempotent"
+        ),
+        session_id=session_b,
+        created_at=start + timedelta(hours=1),
+    )
+
+    assert repository.record_occurrence(
+        representative.pattern_id,
+        repeated_pattern,
+    ) is True
+
     knowledge = repository.get_all_knowledge()
 
     assert len(knowledge) == 1
@@ -371,12 +437,14 @@ def test_repeated_behavior_same_pattern_id_is_idempotent():
         knowledge[0].occurrence_count
     )
 
-    # Get the actual FinalPattern that was stored in the repository
-    stored_patterns = repository.get_all()
-    assert len(stored_patterns) == 1
+    # Recording the same occurrence again must be idempotent.
+    assert repository.record_occurrence(
+        representative.pattern_id,
+        repeated_pattern,
+    ) is True
 
     # Re-submitting the same FinalPattern must be idempotent.
-    assert repository.store(stored_patterns[0]) is True
+    assert repository.store(representative) is True
 
     knowledge_after = (
         repository.get_all_knowledge()
@@ -443,22 +511,52 @@ def test_repeated_occurrence_id_cannot_be_reused_for_different_behavior():
     assert repository.count() == 1
     assert repository.knowledge_count() == 1
 
-    knowledge_before = repository.get_all_knowledge()
-    assert knowledge_before[0].occurrence_count == 2
-
-    # Get the actual FinalPattern from the repository to test ID reuse
     stored_patterns = repository.get_all()
     assert len(stored_patterns) == 1
 
-    # Reusing the repeated occurrence's ID for different behavior
-    # must be rejected.
-    reused_pattern = copy.deepcopy(stored_patterns[0])
+    representative = stored_patterns[0]
 
-    # Mutate fields that participate in behavioral identity.
-    reused_pattern.observations[0]["operation_type"] = "DELETE"
+    repeated_pattern = replace(
+        representative,
+        pattern_id=(
+            f"{representative.pattern_id}-reuse"
+        ),
+        session_id=session_b,
+        created_at=start + timedelta(hours=1),
+    )
 
-    assert reused_pattern.pattern_id == stored_patterns[0].pattern_id
+    assert repository.record_occurrence(
+        representative.pattern_id,
+        repeated_pattern,
+    ) is True
+
+    knowledge_before = repository.get_all_knowledge()
+    assert knowledge_before[0].occurrence_count == 2
+
+    # Mutate fields that participate in behavioral identity while reusing
+    # the recorded occurrence's ID.
+    mutated_observations = copy.deepcopy(
+        repeated_pattern.observations
+    )
+
+    mutated_observations[0]["operation_type"] = "DELETE"
+
+    reused_pattern = replace(
+        repeated_pattern,
+        observations=mutated_observations,
+    )
+
+    assert (
+        reused_pattern.pattern_id
+        == repeated_pattern.pattern_id
+    )
+
     assert repository.store(reused_pattern) is False
+
+    assert repository.record_occurrence(
+        representative.pattern_id,
+        reused_pattern,
+    ) is False
 
     knowledge_after = repository.get_all_knowledge()
 
@@ -767,13 +865,13 @@ def test_repeated_behavior_failure_does_not_leave_partial_state(
 
     repeated_pattern = replace(
         stored_pattern,
-        # Use a different pattern ID to trigger repeated behavior with different ID
         pattern_id=f"{stored_pattern.pattern_id}-repeat",
         created_at=start + timedelta(minutes=1),
     )
 
-    result = repository.store(
-        repeated_pattern
+    result = repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
     )
 
     assert result is False
@@ -885,8 +983,9 @@ def test_repeated_behavior_occurrence_registration_failure_is_atomic(
         created_at=start + timedelta(minutes=1),
     )
 
-    result = repository.store(
-        repeated_pattern
+    result = repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
     )
 
     assert result is False
@@ -1012,8 +1111,9 @@ def test_repeated_behavior_failed_attempt_can_be_retried_once(
     # Attempt 1: forced failure
     # ---------------------------------------------------------------
 
-    first_result = repository.store(
-        repeated_pattern
+    first_result = repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
     )
 
     assert first_result is False
@@ -1047,8 +1147,9 @@ def test_repeated_behavior_failed_attempt_can_be_retried_once(
         not in repository._recorded_occurrence_ids
     )
 
-    second_result = repository.store(
-        repeated_pattern
+    second_result = repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
     )
 
     assert second_result is True
@@ -1084,8 +1185,9 @@ def test_repeated_behavior_failed_attempt_can_be_retried_once(
     # Attempt 3: same occurrence must be idempotent
     # ---------------------------------------------------------------
 
-    third_result = repository.store(
-        repeated_pattern
+    third_result = repository.record_occurrence(
+        stored_pattern.pattern_id,
+        repeated_pattern,
     )
 
     assert third_result is True
