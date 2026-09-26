@@ -1061,3 +1061,40 @@ def test_session_behavioral_difference_still_affects_similarity():
 
     assert 0.0 <= score < 1.0
 
+
+
+def test_unavailable_dimension_score_is_valid_result_state():
+    result = SimilarityResult(
+        status=SimilarityStatus.SUCCESS,
+        score=0.75,
+        candidate_pattern_id="candidate-1",
+        best_match_pattern_id="historical-1",
+        compared_pattern_count=1,
+        dimension_scores={
+            "operational": 1.0,
+            "temporal": 0.5,
+            "sequential": None,
+            "contextual": 0.8,
+            "relationship": None,
+            "session": 0.7,
+        },
+    )
+
+    assert result.is_successful()
+    assert result.dimension_scores["sequential"] is None
+    assert result.dimension_scores["relationship"] is None
+
+
+def test_invalid_dimension_score_is_rejected():
+    with pytest.raises(ValueError):
+        SimilarityResult(
+            status=SimilarityStatus.SUCCESS,
+            score=0.75,
+            candidate_pattern_id="candidate-1",
+            best_match_pattern_id="historical-1",
+            compared_pattern_count=1,
+            dimension_scores={
+                "operational": 1.2,
+            },
+        )
+
