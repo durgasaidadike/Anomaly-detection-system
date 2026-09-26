@@ -37,6 +37,9 @@ class PatternComparator:
         """
         Compare the supported behavioral dimensions.
 
+        Identity and bookkeeping fields are excluded from behavioral
+        similarity where they do not represent behavior.
+
         A dimension receives None when there is not enough
         behavioral information on either side to perform a
         meaningful comparison.
@@ -69,7 +72,7 @@ class PatternComparator:
                     None,
                 ),
             ),
-            "sequential": self.compare_dimension(
+            "sequential": self.compare_sequential(
                 getattr(
                     candidate_pattern,
                     "sequential_characteristics",
@@ -105,7 +108,7 @@ class PatternComparator:
                     None,
                 ),
             ),
-            "session": self.compare_dimension(
+            "session": self.compare_session(
                 getattr(
                     candidate_pattern,
                     "session_characteristics",
@@ -143,6 +146,139 @@ class PatternComparator:
             historical_value,
         )
 
+
+    def compare_sequential(
+        self,
+        candidate_value: Any,
+        historical_value: Any,
+    ) -> Optional[float]:
+        """
+        Compare workflow sequence structure.
+
+        Sequential similarity is based on behavioral operation order.
+        Absolute timestamps belong to the temporal dimension and must
+        not reduce sequential similarity.
+        """
+
+        if not self._has_information(candidate_value):
+            return None
+
+        if not self._has_information(historical_value):
+            return None
+
+        candidate_sequence = self._remove_sequence_metadata(
+            candidate_value
+        )
+
+        historical_sequence = self._remove_sequence_metadata(
+            historical_value
+        )
+
+        return self._value_similarity(
+            candidate_sequence,
+            historical_sequence,
+        )
+
+    def compare_session(
+        self,
+        candidate_value: Any,
+        historical_value: Any,
+    ) -> Optional[float]:
+        """
+        Compare behavioral session characteristics.
+
+        Session identity and absolute lifecycle timestamps are
+        bookkeeping information and must not influence behavioral
+        similarity.
+
+        Behavioral session metrics such as observation count,
+        behavioral density, consistency, diversity, task complexity,
+        working rhythm, burst activity, and continuous activity
+        remain eligible for comparison.
+        """
+
+        if not self._has_information(candidate_value):
+            return None
+
+        if not self._has_information(historical_value):
+            return None
+
+        candidate_session = self._remove_session_metadata(
+            candidate_value
+        )
+
+        historical_session = self._remove_session_metadata(
+            historical_value
+        )
+
+        if not self._has_information(candidate_session):
+            return None
+
+        if not self._has_information(historical_session):
+            return None
+
+        return self._value_similarity(
+            candidate_session,
+            historical_session,
+        )
+
+    @staticmethod
+    def _remove_sequence_metadata(
+        value: Any,
+    ) -> Any:
+        """
+        Remove non-behavioral metadata from sequential entries.
+
+        Current CandidatePatternManager sequence entries contain
+        operation_type and timestamp. Timestamp is intentionally
+        excluded because temporal similarity owns timing behavior.
+        """
+
+        if isinstance(value, (list, tuple)):
+            cleaned = []
+
+            for item in value:
+                if isinstance(item, dict):
+                    cleaned.append(
+                        {
+                            key: item_value
+                            for key, item_value in item.items()
+                            if key != "timestamp"
+                        }
+                    )
+                else:
+                    cleaned.append(item)
+
+            return cleaned
+
+        return value
+
+    @staticmethod
+    def _remove_session_metadata(
+        value: Any,
+    ) -> Any:
+        """
+        Remove session identity and absolute lifecycle metadata.
+
+        These fields identify a session; they do not describe the
+        behavior performed during that session.
+        """
+
+        if not isinstance(value, dict):
+            return value
+
+        excluded_fields = {
+            "session_id",
+            "user_id",
+            "session_start_time",
+            "session_end_time",
+        }
+
+        return {
+            key: item_value
+            for key, item_value in value.items()
+            if key not in excluded_fields
+        }
 
     def _value_similarity(
         self,

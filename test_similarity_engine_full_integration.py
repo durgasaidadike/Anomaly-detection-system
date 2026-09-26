@@ -399,3 +399,101 @@ def test_full_flow_keeps_users_isolated():
     )
     assert result.compared_pattern_count == 1
 
+
+
+def test_full_integration_does_not_penalize_session_identity_or_absolute_time():
+    historical_candidate = build_completed_candidate(
+        session_id="historical-semantic",
+        user_id="user-001",
+        observations=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": datetime(
+                    2026,
+                    9,
+                    10,
+                    10,
+                    0,
+                ),
+                "file_extension": ".py",
+                "directory": "/project",
+            },
+            {
+                "operation_type": "MODIFY",
+                "timestamp": datetime(
+                    2026,
+                    9,
+                    10,
+                    10,
+                    5,
+                ),
+                "file_extension": ".py",
+                "directory": "/project",
+            },
+        ],
+    )
+
+    historical_final = FinalPatternFactory().create(
+        historical_candidate
+    )
+
+    assert historical_final is not None
+
+    repository = FinalPatternRepository()
+
+    assert repository.store(
+        historical_final
+    ) is True
+
+    current_candidate = build_completed_candidate(
+        session_id="current-semantic",
+        user_id="user-001",
+        observations=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": datetime(
+                    2026,
+                    9,
+                    25,
+                    18,
+                    0,
+                ),
+                "file_extension": ".py",
+                "directory": "/project",
+            },
+            {
+                "operation_type": "MODIFY",
+                "timestamp": datetime(
+                    2026,
+                    9,
+                    25,
+                    18,
+                    5,
+                ),
+                "file_extension": ".py",
+                "directory": "/project",
+            },
+        ],
+    )
+
+    result = SimilarityEngine(
+        repository
+    ).evaluate(current_candidate)
+
+    assert result.status == SimilarityStatus.SUCCESS
+    assert result.score is not None
+
+    assert result.best_match_pattern_id == (
+        historical_final.pattern_id
+    )
+
+    assert (
+        result.dimension_scores["sequential"]
+        == 1.0
+    )
+
+    assert (
+        result.dimension_scores["session"]
+        == 1.0
+    )
+

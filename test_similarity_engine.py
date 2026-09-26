@@ -907,3 +907,157 @@ def test_similarity_engine_returns_fresh_result_each_time():
         second.comparison_summary
     )
 
+
+
+# ----------------------------------------------------------------------
+# Behavioral Semantics
+# ----------------------------------------------------------------------
+
+def test_sequential_similarity_ignores_absolute_timestamps():
+    candidate = make_pattern(
+        session_id="current-session",
+        user_id="user-001",
+        sequential=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": "2026-09-20T10:00:00",
+            },
+            {
+                "operation_type": "MODIFY",
+                "timestamp": "2026-09-20T10:05:00",
+            },
+            {
+                "operation_type": "DELETE",
+                "timestamp": "2026-09-20T10:10:00",
+            },
+        ],
+    )
+
+    historical = make_pattern(
+        session_id="historical-session",
+        user_id="user-001",
+        pattern_id="pattern-001",
+        sequential=[
+            {
+                "operation_type": "CREATE",
+                "timestamp": "2026-09-25T18:00:00",
+            },
+            {
+                "operation_type": "MODIFY",
+                "timestamp": "2026-09-25T18:05:00",
+            },
+            {
+                "operation_type": "DELETE",
+                "timestamp": "2026-09-25T18:10:00",
+            },
+        ],
+    )
+
+    comparator = PatternComparator()
+
+    score = comparator.compare_sequential(
+        candidate.sequential_characteristics,
+        historical.sequential_characteristics,
+    )
+
+    assert score == 1.0
+
+
+def test_sequential_similarity_detects_different_operation_order():
+    comparator = PatternComparator()
+
+    candidate = [
+        {
+            "operation_type": "CREATE",
+            "timestamp": "2026-09-20T10:00:00",
+        },
+        {
+            "operation_type": "MODIFY",
+            "timestamp": "2026-09-20T10:05:00",
+        },
+    ]
+
+    historical = [
+        {
+            "operation_type": "MODIFY",
+            "timestamp": "2026-09-20T10:00:00",
+        },
+        {
+            "operation_type": "CREATE",
+            "timestamp": "2026-09-20T10:05:00",
+        },
+    ]
+
+    score = comparator.compare_sequential(
+        candidate,
+        historical,
+    )
+
+    assert score < 1.0
+
+
+def test_session_similarity_ignores_identity_and_absolute_times():
+    candidate = {
+        "session_id": "current-session",
+        "user_id": "user-001",
+        "session_start_time": "2026-09-20T10:00:00",
+        "observation_count": 3,
+        "session_length_seconds": 120.0,
+        "operation_diversity": 2,
+        "behavioral_density": 0.025,
+        "behavioral_consistency": 1.0,
+    }
+
+    historical = {
+        "session_id": "historical-session",
+        "user_id": "user-001",
+        "session_start_time": "2026-09-25T18:00:00",
+        "observation_count": 3,
+        "session_length_seconds": 120.0,
+        "operation_diversity": 2,
+        "behavioral_density": 0.025,
+        "behavioral_consistency": 1.0,
+    }
+
+    comparator = PatternComparator()
+
+    score = comparator.compare_session(
+        candidate,
+        historical,
+    )
+
+    assert score == 1.0
+
+
+def test_session_behavioral_difference_still_affects_similarity():
+    candidate = {
+        "session_id": "current-session",
+        "user_id": "user-001",
+        "session_start_time": "2026-09-20T10:00:00",
+        "observation_count": 3,
+        "session_length_seconds": 120.0,
+        "operation_diversity": 2,
+        "behavioral_density": 0.025,
+        "behavioral_consistency": 1.0,
+    }
+
+    historical = {
+        "session_id": "historical-session",
+        "user_id": "user-001",
+        "session_start_time": "2026-09-25T18:00:00",
+        "observation_count": 10,
+        "session_length_seconds": 600.0,
+        "operation_diversity": 5,
+        "behavioral_density": 0.016,
+        "behavioral_consistency": 0.3,
+    }
+
+    comparator = PatternComparator()
+
+    score = comparator.compare_session(
+        candidate,
+        historical,
+    )
+
+    assert 0.0 <= score < 1.0
+
