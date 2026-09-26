@@ -1,3 +1,4 @@
+from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -1097,4 +1098,56 @@ def test_invalid_dimension_score_is_rejected():
                 "operational": 1.2,
             },
         )
+
+
+def test_missing_candidate_user_id_never_matches_unscoped_history():
+    candidate = make_pattern(
+        session_id="candidate-session",
+        user_id=None,
+    )
+
+    historical_one = make_pattern(
+        session_id="historical-1",
+        user_id=None,
+    )
+
+    historical_two = make_pattern(
+        session_id="historical-2",
+        user_id=None,
+    )
+
+    repository = FakeRepository(
+        [historical_one, historical_two]
+    )
+
+    engine = SimilarityEngine(repository=repository)
+
+    result = engine.evaluate(candidate)
+
+    assert result.status == SimilarityStatus.COLD_START
+    assert result.compared_pattern_count == 0
+    assert result.score is None
+
+
+def test_similarity_evaluation_does_not_modify_historical_pattern():
+    historical = make_pattern(
+        session_id="historical-1",
+        user_id="user-1",
+    )
+    candidate = make_pattern(
+        session_id="candidate-1",
+        user_id="user-1",
+    )
+
+    repository = FakeRepository([historical])
+
+    before = deepcopy(historical)
+
+    engine = SimilarityEngine(repository=repository)
+    engine.evaluate(candidate)
+
+    after = repository.get_all()[0]
+
+    assert after == before
+
 

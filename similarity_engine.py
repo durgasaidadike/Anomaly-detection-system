@@ -229,6 +229,11 @@ class SimilarityEngine:
 
         Only patterns belonging to the same user are eligible.
         No direct storage access is performed here.
+
+        An unspecified candidate identity produces no historical
+        matches: None means identity unavailable, not same user.
+        Therefore an unscoped candidate never receives a shared or
+        cross-user history bucket.
         """
 
         patterns = self._repository.get_all()
@@ -241,6 +246,9 @@ class SimilarityEngine:
             "user_id",
             None,
         )
+
+        if candidate_user_id is None:
+            return []
 
         return [
             pattern
