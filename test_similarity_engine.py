@@ -725,3 +725,185 @@ def test_engine_does_not_store_historical_state_between_evaluations():
         "session-two"
     )
 
+
+# ----------------------------------------------------------------------
+# Candidate Pattern Contract
+# ----------------------------------------------------------------------
+
+def test_raw_candidate_pattern_without_derived_behavior_returns_insufficient_data():
+    from candidate_pattern_models import CandidatePattern
+
+    candidate = CandidatePattern(
+        session_id="raw-candidate-001",
+        user_id="user-001",
+    )
+
+    repository = FakeRepository(
+        [
+            make_pattern(
+                session_id="historical-001",
+                user_id="user-001",
+                pattern_id="pattern-001",
+                operational={
+                    "create": 1,
+                },
+            )
+        ]
+    )
+
+    engine = SimilarityEngine(repository)
+
+    result = engine.evaluate(candidate)
+
+    assert result.status == (
+        SimilarityStatus.INSUFFICIENT_DATA
+    )
+
+    assert result.score is None
+    assert result.compared_pattern_count == 1
+
+
+def test_similarity_score_is_always_normalized():
+    candidate = make_pattern(
+        session_id="normalized-candidate",
+        user_id="user-001",
+        operational={
+            "create": 10,
+            "modify": 5,
+        },
+        temporal={
+            "hour": 10,
+        },
+        sequential=[
+            {"operation": "CREATE"},
+            {"operation": "MODIFY"},
+        ],
+        contextual={
+            "file_extension": ".py",
+            "directory": "/project",
+        },
+        relationship=[
+            {
+                "relationship_type": "SEQUENTIAL",
+                "from_operation": "CREATE",
+                "to_operation": "MODIFY",
+            }
+        ],
+        session={
+            "session_length_seconds": 300,
+            "operation_count": 2,
+        },
+    )
+
+    historical = make_pattern(
+        session_id="normalized-history",
+        user_id="user-001",
+        pattern_id="pattern-normalized",
+        operational={
+            "create": 1,
+        },
+        temporal={
+            "hour": 22,
+        },
+        sequential=[
+            {"operation": "CREATE"},
+        ],
+        contextual={
+            "file_extension": ".txt",
+            "directory": "/documents",
+        },
+        relationship=[
+            {
+                "relationship_type": "SEQUENTIAL",
+                "from_operation": "CREATE",
+                "to_operation": "MODIFY",
+            }
+        ],
+        session={
+            "session_length_seconds": 120,
+            "operation_count": 1,
+        },
+    )
+
+    result = SimilarityEngine(
+        FakeRepository([historical])
+    ).evaluate(candidate)
+
+    assert result.score is not None
+    assert 0.0 <= result.score <= 1.0
+
+    # Every behavioral dimension available on both patterns must
+    # contribute a normalized score. All six dimensions are populated
+    # above so no entry is None.
+    assert len(result.dimension_scores) == 6
+
+    for value in result.dimension_scores.values():
+        assert 0.0 <= value <= 1.0
+
+
+def test_similarity_engine_does_not_compare_other_users():
+    candidate = make_pattern(
+        session_id="candidate-user-a",
+        user_id="user-a",
+        operational={
+            "create": 5,
+        },
+    )
+
+    repository = FakeRepository(
+        [
+            make_pattern(
+                session_id="history-user-b",
+                user_id="user-b",
+                pattern_id="pattern-b",
+                operational={
+                    "create": 5,
+                },
+            )
+        ]
+    )
+
+    result = SimilarityEngine(
+        repository
+    ).evaluate(candidate)
+
+    assert result.status == SimilarityStatus.COLD_START
+    assert result.score is None
+    assert result.compared_pattern_count == 0
+
+
+def test_similarity_engine_returns_fresh_result_each_time():
+    candidate = make_pattern(
+        session_id="candidate-fresh",
+        user_id="user-001",
+        operational={
+            "create": 5,
+        },
+    )
+
+    historical = make_pattern(
+        session_id="history-fresh",
+        user_id="user-001",
+        pattern_id="pattern-fresh",
+        operational={
+            "create": 5,
+        },
+    )
+
+    engine = SimilarityEngine(
+        FakeRepository([historical])
+    )
+
+    first = engine.evaluate(candidate)
+    second = engine.evaluate(candidate)
+
+    assert first is not second
+
+    assert first.score == second.score
+    assert first.dimension_scores == (
+        second.dimension_scores
+    )
+    assert first.comparison_summary == (
+        second.comparison_summary
+    )
+
