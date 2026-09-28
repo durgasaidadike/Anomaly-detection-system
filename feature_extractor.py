@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 
+from feature_delivery import FeatureVectorSink
 from feature_groups import FeatureGroups
 from feature_matrix_models import FeatureMatrix
 from feature_validator import FeatureValidator
@@ -225,3 +226,28 @@ class FeatureExtractor:
             pattern_ids=tuple(pattern_ids),
             knowledge_ids=tuple(knowledge_ids),
         )
+
+    @staticmethod
+    def deliver_feature_vector(
+        vector: FeatureVector,
+        sink: FeatureVectorSink,
+    ) -> None:
+        """
+        Deliver a validated FeatureVector to a downstream consumer.
+
+        The Feature Extractor does not inspect, modify, store, or
+        otherwise process the vector after delivery.
+        """
+
+        if not isinstance(vector, FeatureVector):
+            raise TypeError(
+                "deliver_feature_vector expects a FeatureVector."
+            )
+
+        if not vector.is_complete():
+            raise ValueError(
+                f"Cannot deliver incomplete feature vector "
+                f"for pattern '{vector.pattern_id}'."
+            )
+
+        sink.accept_feature_vector(vector)
