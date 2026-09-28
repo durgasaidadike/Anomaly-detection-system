@@ -134,3 +134,40 @@ class FeatureExtractor:
             features,
             normalizers,
         )
+
+    @staticmethod
+    def build_normalized_feature_vector(
+        *,
+        pattern_id: str,
+        knowledge_id: str,
+        features: Mapping[str, float],
+        feature_names: Sequence[str],
+        normalizers: Mapping[str, Callable[[float], float]],
+    ) -> FeatureVector:
+        """
+        Build one validated FeatureVector after numerical normalization.
+
+        Processing order:
+
+            source numerical features
+                    ↓
+                normalization
+                    ↓
+              feature validation
+                    ↓
+                FeatureVector
+
+        Normalization rules are explicitly supplied by the caller.
+        """
+
+        normalized_features = NormalizationEngine.normalize_features(
+            features,
+            normalizers,
+        )
+
+        return FeatureExtractor().build_feature_vector(
+            pattern_id=pattern_id,
+            knowledge_id=knowledge_id,
+            features=normalized_features,
+            feature_names=feature_names,
+        )

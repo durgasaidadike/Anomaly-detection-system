@@ -590,3 +590,176 @@ def test_feature_extractor_rejects_undeclared_feature():
                 "feature_a",
             ),
         )
+
+
+def test_build_normalized_feature_vector_integrates_normalization_and_validation():
+    extractor = FeatureExtractor()
+
+    vector = extractor.build_normalized_feature_vector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "operation.modify_ratio": 80.0,
+            "intelligence.confidence": 90.0,
+        },
+        feature_names=(
+            "operation.modify_ratio",
+            "intelligence.confidence",
+        ),
+        normalizers={
+            "operation.modify_ratio": lambda value: value / 100.0,
+            "intelligence.confidence": lambda value: value / 100.0,
+        },
+    )
+
+    assert isinstance(vector, FeatureVector)
+
+    assert vector.pattern_id == "pattern-1"
+    assert vector.knowledge_id == "knowledge-1"
+
+    assert vector.feature_names == (
+        "operation.modify_ratio",
+        "intelligence.confidence",
+    )
+
+    assert vector.as_vector() == (
+        0.8,
+        0.9,
+    )
+
+
+def test_build_normalized_feature_vector_preserves_feature_order():
+    extractor = FeatureExtractor()
+
+    vector = extractor.build_normalized_feature_vector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "feature_b": 20.0,
+            "feature_a": 10.0,
+        },
+        feature_names=(
+            "feature_a",
+            "feature_b",
+        ),
+        normalizers={
+            "feature_a": lambda value: value / 10.0,
+            "feature_b": lambda value: value / 20.0,
+        },
+    )
+
+    assert vector.as_vector() == (
+        1.0,
+        1.0,
+    )
+
+
+def test_build_normalized_feature_vector_rejects_missing_normalizer():
+    extractor = FeatureExtractor()
+
+    with pytest.raises(
+        ValueError,
+        match="No normalization rule supplied",
+    ):
+        extractor.build_normalized_feature_vector(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            features={
+                "feature_a": 10.0,
+                "feature_b": 20.0,
+            },
+            feature_names=(
+                "feature_a",
+                "feature_b",
+            ),
+            normalizers={
+                "feature_a": lambda value: value / 10.0,
+            },
+        )
+
+
+def test_build_normalized_feature_vector_rejects_invalid_normalized_value():
+    extractor = FeatureExtractor()
+
+    with pytest.raises(
+        ValueError,
+        match="non-finite value",
+    ):
+        extractor.build_normalized_feature_vector(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            features={
+                "feature_a": 10.0,
+            },
+            feature_names=(
+                "feature_a",
+            ),
+            normalizers={
+                "feature_a": lambda value: float("nan"),
+            },
+        )
+
+
+def test_build_normalized_feature_vector_does_not_modify_source_features():
+    extractor = FeatureExtractor()
+
+    features = {
+        "feature_a": 10.0,
+        "feature_b": 20.0,
+    }
+
+    original = dict(features)
+
+    extractor.build_normalized_feature_vector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features=features,
+        feature_names=(
+            "feature_a",
+            "feature_b",
+        ),
+        normalizers={
+            "feature_a": lambda value: value / 10.0,
+            "feature_b": lambda value: value / 20.0,
+        },
+    )
+
+    assert features == original
+
+
+def test_build_normalized_feature_vector_is_stateless():
+    extractor = FeatureExtractor()
+
+    first = extractor.build_normalized_feature_vector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "feature_a": 10.0,
+        },
+        feature_names=(
+            "feature_a",
+        ),
+        normalizers={
+            "feature_a": lambda value: value / 10.0,
+        },
+    )
+
+    second = extractor.build_normalized_feature_vector(
+        pattern_id="pattern-2",
+        knowledge_id="knowledge-2",
+        features={
+            "feature_a": 30.0,
+        },
+        feature_names=(
+            "feature_a",
+        ),
+        normalizers={
+            "feature_a": lambda value: value / 10.0,
+        },
+    )
+
+    assert first.pattern_id == "pattern-1"
+    assert second.pattern_id == "pattern-2"
+
+    assert first.as_vector() == (1.0,)
+    assert second.as_vector() == (3.0,)
