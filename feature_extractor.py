@@ -94,3 +94,28 @@ class FeatureExtractor:
             recurrence=dict(recurrence),
             drift=dict(drift),
         )
+
+    @staticmethod
+    def construct_features(
+        groups: FeatureGroups,
+    ) -> tuple[dict[str, float], tuple[str, ...]]:
+        """
+        Construct a deterministic flat feature representation from
+        separated behavioral feature groups.
+
+        No numerical transformation or feature calculation is
+        performed here. Existing numerical values are only organized
+        into a stable feature namespace and ordering.
+        """
+
+        constructed_features: dict[str, float] = {}
+        feature_names: list[str] = []
+
+        for group_name, group_features in groups.as_groups().items():
+            for feature_name, value in group_features.items():
+                qualified_name = f"{group_name}.{feature_name}"
+
+                constructed_features[qualified_name] = value
+                feature_names.append(qualified_name)
+
+        return constructed_features, tuple(feature_names)
