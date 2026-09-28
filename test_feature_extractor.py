@@ -71,7 +71,10 @@ def test_build_feature_vector_accepts_mapping_input():
 def test_incomplete_feature_vector_is_rejected():
     extractor = FeatureExtractor()
 
-    with pytest.raises(ValueError, match="Incomplete feature vector"):
+    with pytest.raises(
+        ValueError,
+        match="Feature representation is incomplete",
+    ):
         extractor.build_feature_vector(
             pattern_id="pattern-1",
             knowledge_id="knowledge-pattern-1",
@@ -505,3 +508,85 @@ def test_feature_extractor_constructs_empty_representation():
 
     assert features == {}
     assert feature_names == ()
+
+
+def test_feature_extractor_delegates_normalization():
+    extractor = FeatureExtractor()
+
+    features = {
+        "operation.modify_ratio": 80.0,
+        "intelligence.confidence": 90.0,
+    }
+
+    normalizers = {
+        "operation.modify_ratio": lambda value: value / 100.0,
+        "intelligence.confidence": lambda value: value / 100.0,
+    }
+
+    normalized = extractor.normalize_features(
+        features,
+        normalizers,
+    )
+
+    assert normalized == {
+        "operation.modify_ratio": 0.8,
+        "intelligence.confidence": 0.9,
+    }
+
+
+def test_feature_extractor_rejects_invalid_numeric_feature():
+    extractor = FeatureExtractor()
+
+    with pytest.raises(
+        ValueError,
+        match="must be numerical",
+    ):
+        extractor.build_feature_vector(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            features={
+                "feature_a": "invalid",
+            },
+            feature_names=(
+                "feature_a",
+            ),
+        )
+
+
+def test_feature_extractor_rejects_non_finite_feature():
+    extractor = FeatureExtractor()
+
+    with pytest.raises(
+        ValueError,
+        match="finite value",
+    ):
+        extractor.build_feature_vector(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            features={
+                "feature_a": float("nan"),
+            },
+            feature_names=(
+                "feature_a",
+            ),
+        )
+
+
+def test_feature_extractor_rejects_undeclared_feature():
+    extractor = FeatureExtractor()
+
+    with pytest.raises(
+        ValueError,
+        match="undeclared features",
+    ):
+        extractor.build_feature_vector(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            features={
+                "feature_a": 0.8,
+                "feature_b": 0.2,
+            },
+            feature_names=(
+                "feature_a",
+            ),
+        )

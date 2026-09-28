@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from feature_groups import FeatureGroups
+from feature_validator import FeatureValidator
 from feature_vector_models import FeatureVector
+from normalization_engine import NormalizationEngine
 
 
 class FeatureExtractor:
@@ -45,25 +47,20 @@ class FeatureExtractor:
         return vector
 
     @staticmethod
-    def validate_features(vector: FeatureVector) -> None:
+    def validate_features(
+        vector: FeatureVector,
+    ) -> None:
         """
-        Validate that the generated feature vector is complete.
-
-        Raises:
-            ValueError: if the feature vector is incomplete.
+        Validate the structural and numerical integrity of a
+        generated feature vector.
         """
 
-        if not vector.is_complete():
-            missing_features = tuple(
-                name
-                for name in vector.feature_names
-                if name not in vector.features
-            )
-
-            raise ValueError(
-                f"Incomplete feature vector. "
-                f"Missing features: {missing_features}"
-            )
+        FeatureValidator.validate(
+            pattern_id=vector.pattern_id,
+            knowledge_id=vector.knowledge_id,
+            features=vector.features,
+            feature_names=vector.feature_names,
+        )
 
     @staticmethod
     def separate_features(
@@ -119,3 +116,21 @@ class FeatureExtractor:
                 feature_names.append(qualified_name)
 
         return constructed_features, tuple(feature_names)
+
+    @staticmethod
+    def normalize_features(
+        features: Mapping[str, float],
+        normalizers: Mapping[str, Callable[[float], float]],
+    ) -> dict[str, float]:
+        """
+        Normalize an already-constructed numerical feature
+        representation using explicitly supplied rules.
+
+        FeatureExtractor orchestrates the transformation but
+        does not define feature-specific normalization policy.
+        """
+
+        return NormalizationEngine.normalize_features(
+            features,
+            normalizers,
+        )
