@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 
 from feature_groups import FeatureGroups
+from feature_matrix_models import FeatureMatrix
 from feature_validator import FeatureValidator
 from feature_vector_models import FeatureVector
 from normalization_engine import NormalizationEngine
@@ -170,4 +171,57 @@ class FeatureExtractor:
             knowledge_id=knowledge_id,
             features=normalized_features,
             feature_names=feature_names,
+        )
+
+    @staticmethod
+    def build_feature_matrix(
+        vectors: Sequence[FeatureVector],
+    ) -> FeatureMatrix:
+        """
+        Build a feature matrix from already-formed FeatureVector objects.
+
+        Every vector must use the same feature-name ordering.
+        Each vector becomes exactly one matrix row.
+        """
+
+        normalized_vectors = tuple(vectors)
+
+        if not normalized_vectors:
+            return FeatureMatrix(
+                feature_names=(),
+                rows=(),
+                pattern_ids=(),
+                knowledge_ids=(),
+            )
+
+        feature_names = normalized_vectors[0].feature_names
+
+        rows: list[tuple[float, ...]] = []
+        pattern_ids: list[str] = []
+        knowledge_ids: list[str] = []
+
+        for vector in normalized_vectors:
+            if vector.feature_names != feature_names:
+                raise ValueError(
+                    "All feature vectors must use the same "
+                    "feature-name ordering."
+                )
+
+            if not vector.is_complete():
+                raise ValueError(
+                    f"Feature vector for pattern "
+                    f"'{vector.pattern_id}' is incomplete."
+                )
+
+            row = vector.as_vector()
+
+            rows.append(row)
+            pattern_ids.append(vector.pattern_id)
+            knowledge_ids.append(vector.knowledge_id)
+
+        return FeatureMatrix(
+            feature_names=feature_names,
+            rows=tuple(rows),
+            pattern_ids=tuple(pattern_ids),
+            knowledge_ids=tuple(knowledge_ids),
         )

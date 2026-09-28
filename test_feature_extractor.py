@@ -763,3 +763,151 @@ def test_build_normalized_feature_vector_is_stateless():
 
     assert first.as_vector() == (1.0,)
     assert second.as_vector() == (3.0,)
+
+
+def test_feature_extractor_builds_one_matrix_row_per_vector():
+    extractor = FeatureExtractor()
+
+    vector_one = FeatureVector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "feature_a": 0.8,
+            "feature_b": 0.2,
+        },
+        feature_names=(
+            "feature_a",
+            "feature_b",
+        ),
+    )
+
+    vector_two = FeatureVector(
+        pattern_id="pattern-2",
+        knowledge_id="knowledge-2",
+        features={
+            "feature_a": 0.4,
+            "feature_b": 0.6,
+        },
+        feature_names=(
+            "feature_a",
+            "feature_b",
+        ),
+    )
+
+    matrix = extractor.build_feature_matrix(
+        (
+            vector_one,
+            vector_two,
+        )
+    )
+
+    assert matrix.feature_names == (
+        "feature_a",
+        "feature_b",
+    )
+
+    assert matrix.rows == (
+        (0.8, 0.2),
+        (0.4, 0.6),
+    )
+
+    assert matrix.pattern_ids == (
+        "pattern-1",
+        "pattern-2",
+    )
+
+    assert matrix.knowledge_ids == (
+        "knowledge-1",
+        "knowledge-2",
+    )
+
+
+def test_feature_extractor_rejects_inconsistent_feature_columns():
+    extractor = FeatureExtractor()
+
+    vector_one = FeatureVector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "feature_a": 0.8,
+            "feature_b": 0.2,
+        },
+        feature_names=(
+            "feature_a",
+            "feature_b",
+        ),
+    )
+
+    vector_two = FeatureVector(
+        pattern_id="pattern-2",
+        knowledge_id="knowledge-2",
+        features={
+            "feature_a": 0.4,
+            "feature_c": 0.6,
+        },
+        feature_names=(
+            "feature_a",
+            "feature_c",
+        ),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="same feature-name ordering",
+    ):
+        extractor.build_feature_matrix(
+            (
+                vector_one,
+                vector_two,
+            )
+        )
+
+
+def test_feature_extractor_builds_empty_feature_matrix():
+    extractor = FeatureExtractor()
+
+    matrix = extractor.build_feature_matrix(())
+
+    assert matrix.feature_names == ()
+    assert matrix.rows == ()
+    assert matrix.pattern_ids == ()
+    assert matrix.knowledge_ids == ()
+
+
+def test_feature_extractor_preserves_vector_order_in_matrix():
+    extractor = FeatureExtractor()
+
+    vector_one = FeatureVector(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        features={
+            "feature_a": 0.1,
+        },
+        feature_names=("feature_a",),
+    )
+
+    vector_two = FeatureVector(
+        pattern_id="pattern-2",
+        knowledge_id="knowledge-2",
+        features={
+            "feature_a": 0.9,
+        },
+        feature_names=("feature_a",),
+    )
+
+    matrix = extractor.build_feature_matrix(
+        (
+            vector_two,
+            vector_one,
+        )
+    )
+
+    assert matrix.rows == (
+        (0.9,),
+        (0.1,),
+    )
+
+    assert matrix.pattern_ids == (
+        "pattern-2",
+        "pattern-1",
+    )
