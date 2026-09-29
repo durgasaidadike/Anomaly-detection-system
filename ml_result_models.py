@@ -2,21 +2,36 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from prediction_validator import PredictionValidator
+
 
 @dataclass(frozen=True)
 class ModelScore:
     """
-    Result produced by one ML model.
+    Validated numerical result produced by one ML model.
     """
 
     model_name: str
     score: float
 
+    def __post_init__(self) -> None:
+        validated_score = PredictionValidator.validate(
+            model_name=self.model_name,
+            prediction=self.score,
+        )
+
+        object.__setattr__(
+            self,
+            "score",
+            validated_score,
+        )
+
 
 @dataclass(frozen=True)
 class ModelEvaluation:
     """
-    Collection of model-level results for one behavioral evaluation.
+    Collection of validated model-level results for one
+    behavioral evaluation.
     """
 
     pattern_id: str

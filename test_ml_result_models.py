@@ -67,3 +67,37 @@ def test_model_evaluation_is_immutable():
 
     with pytest.raises(AttributeError):
         evaluation.pattern_id = "changed"
+
+
+def test_model_score_rejects_non_finite_score():
+    with pytest.raises(ValueError):
+        ModelScore(
+            model_name="IsolationForest",
+            score=float("nan"),
+        )
+
+
+def test_model_score_rejects_non_numeric_score():
+    with pytest.raises(ValueError):
+        ModelScore(
+            model_name="IsolationForest",
+            score="invalid",
+        )
+
+
+def test_model_score_normalizes_integer_to_float():
+    result = ModelScore(
+        model_name="IsolationForest",
+        score=1,
+    )
+
+    assert result.score == 1.0
+    assert isinstance(result.score, float)
+
+
+def test_model_score_rejects_empty_model_name():
+    with pytest.raises(ValueError):
+        ModelScore(
+            model_name="",
+            score=0.5,
+        )
