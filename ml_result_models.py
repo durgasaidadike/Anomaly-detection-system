@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from prediction_validator import PredictionValidator
+from score_semantics import (
+    ScoreDirection,
+    to_anomaly_direction,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,24 @@ class ModelScore:
             self,
             "score",
             validated_score,
+        )
+
+    def as_anomaly_score(
+        self,
+        direction: ScoreDirection,
+    ) -> float:
+        """
+        Return the score using PRISM's canonical anomaly direction.
+
+        Higher values indicate greater anomaly-oriented magnitude.
+
+        The original raw score stored in this ModelScore is not
+        modified.
+        """
+
+        return to_anomaly_direction(
+            self.score,
+            direction,
         )
 
 

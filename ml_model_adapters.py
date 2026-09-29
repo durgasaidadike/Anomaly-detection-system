@@ -6,6 +6,7 @@ import numpy as np
 
 from feature_vector_models import FeatureVector
 from ml_model_contracts import MLModel
+from score_semantics import ScoreDirection
 
 
 class _SklearnModelAdapter:
@@ -23,6 +24,15 @@ class _SklearnModelAdapter:
 
     def __init__(self, estimator: Any) -> None:
         self._estimator = estimator
+
+    @property
+    def score_direction(self) -> ScoreDirection:
+        """
+        Current PRISM sklearn anomaly models use a raw score
+        direction where lower values represent more abnormal
+        behavior.
+        """
+        return ScoreDirection.LOWER_IS_MORE_ANOMALOUS
 
     @staticmethod
     def _feature_row(vector: FeatureVector) -> np.ndarray:

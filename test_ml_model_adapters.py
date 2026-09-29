@@ -8,6 +8,7 @@ from ml_model_adapters import (
     LocalOutlierFactorAdapter,
     OneClassSVMAdapter,
 )
+from score_semantics import ScoreDirection
 
 
 class DecisionFunctionEstimator:
@@ -268,3 +269,26 @@ def test_real_elliptic_envelope_adapter():
 
     assert isinstance(result, float)
     assert np.isfinite(result)
+
+
+def test_all_current_models_declare_score_direction():
+    adapters = (
+        IsolationForestAdapter(
+            DecisionFunctionEstimator(0.1)
+        ),
+        LocalOutlierFactorAdapter(
+            ScoreSamplesEstimator(0.1)
+        ),
+        OneClassSVMAdapter(
+            DecisionFunctionEstimator(0.1)
+        ),
+        EllipticEnvelopeAdapter(
+            DecisionFunctionEstimator(0.1)
+        ),
+    )
+
+    for adapter in adapters:
+        assert (
+            adapter.score_direction
+            == ScoreDirection.LOWER_IS_MORE_ANOMALOUS
+        )

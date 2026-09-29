@@ -1,11 +1,16 @@
 from feature_vector_models import FeatureVector
 from ml_model_contracts import MLModel
+from score_semantics import ScoreDirection
 
 
 class DummyModel:
     @property
     def model_name(self) -> str:
         return "DummyModel"
+
+    @property
+    def score_direction(self) -> ScoreDirection:
+        return ScoreDirection.LOWER_IS_MORE_ANOMALOUS
 
     def predict(
         self,
@@ -29,4 +34,8 @@ def test_model_contract_accepts_feature_vector():
     )
 
     assert model.model_name == "DummyModel"
+    assert (
+        model.score_direction
+        == ScoreDirection.LOWER_IS_MORE_ANOMALOUS
+    )
     assert model.predict(vector) == 0.5
