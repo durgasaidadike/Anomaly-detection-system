@@ -1,127 +1,98 @@
 import pytest
 
-from ensemble_result_models import (
-    EnsembleResult,
-    MLMetadata,
-)
+from ensemble_result_models import EnsembleResult, MLMetadata
 from ml_inference_results import ModelFailure
 from ml_result_models import ModelScore
 from score_calibration import CalibratedModelScore
 
 
-def calibrated(
-    model_name: str,
-    score: float,
-) -> CalibratedModelScore:
-    return CalibratedModelScore(
-        model_name=model_name,
-        raw_score=score,
-        canonical_score=score,
-        calibrated_score=score,
+def make_raw_scores():
+    return (
+        ModelScore("isolation_forest", -0.2),
+        ModelScore("lof", -0.4),
     )
 
 
-def build_result() -> EnsembleResult:
-    return EnsembleResult(
-        pattern_id="pattern-1",
-        knowledge_id="knowledge-pattern-1",
-        model_scores=(
-            ModelScore(
-                model_name="IsolationForest",
-                score=-0.2,
-            ),
-            ModelScore(
-                model_name="LocalOutlierFactor",
-                score=-1.1,
-            ),
+def make_calibrated_scores():
+    return (
+        CalibratedModelScore(
+            model_name="isolation_forest",
+            raw_score=-0.2,
+            canonical_score=0.2,
+            calibrated_score=0.3,
         ),
-        calibrated_scores=(
-            calibrated(
-                "IsolationForest",
-                0.8,
-            ),
-            calibrated(
-                "LocalOutlierFactor",
-                0.6,
-            ),
-        ),
-        ensemble_score=0.72,
-        failures=(),
-        metadata=MLMetadata(
-            configured_model_names=(
-                "IsolationForest",
-                "LocalOutlierFactor",
-            ),
-            successful_model_names=(
-                "IsolationForest",
-                "LocalOutlierFactor",
-            ),
-            failed_model_names=(),
+        CalibratedModelScore(
+            model_name="lof",
+            raw_score=-0.4,
+            canonical_score=0.4,
+            calibrated_score=0.5,
         ),
     )
 
 
-def test_metadata_counts_models():
-    metadata = MLMetadata(
+def make_metadata():
+    return MLMetadata(
         configured_model_names=(
-            "IsolationForest",
-            "LocalOutlierFactor",
-            "OneClassSVM",
-            "EllipticEnvelope",
+            "isolation_forest",
+            "lof",
+            "one_class_svm",
+            "elliptic_envelope",
         ),
         successful_model_names=(
-            "IsolationForest",
-            "LocalOutlierFactor",
-            "EllipticEnvelope",
+            "isolation_forest",
+            "lof",
         ),
-        failed_model_names=(
-            "OneClassSVM",
-        ),
+        failed_model_names=(),
     )
+
+
+def make_result():
+    return EnsembleResult(
+        pattern_id="pattern-1",
+        knowledge_id="knowledge-1",
+        model_scores=make_raw_scores(),
+        calibrated_scores=make_calibrated_scores(),
+        anomaly_score=0.4,
+        failures=(),
+        metadata=make_metadata(),
+    )
+
+
+def test_metadata_counts():
+    metadata = make_metadata()
 
     assert metadata.configured_model_count() == 4
-    assert metadata.successful_model_count() == 3
-    assert metadata.failed_model_count() == 1
+    assert metadata.successful_model_count() == 2
+    assert metadata.failed_model_count() == 0
 
 
-def test_ensemble_result_preserves_identity():
-    result = build_result()
+def test_result_preserves_pattern_identity():
+    result = make_result()
 
     assert result.pattern_id == "pattern-1"
-    assert result.knowledge_id == (
-        "knowledge-pattern-1"
-    )
+    assert result.knowledge_id == "knowledge-1"
 
 
-def test_ensemble_result_preserves_raw_scores():
-    result = build_result()
+def test_result_preserves_raw_model_scores():
+    result = make_result()
 
-    assert result.model_scores[0].score == -0.2
-    assert result.model_scores[1].score == -1.1
-
-
-def test_ensemble_result_preserves_calibrated_scores():
-    result = build_result()
-
-    assert (
-        result.calibrated_scores[0].calibrated_score
-        == 0.8
-    )
-
-    assert (
-        result.calibrated_scores[1].calibrated_score
-        == 0.6
-    )
+    assert result.model_scores == make_raw_scores()
 
 
-def test_ensemble_result_preserves_final_score():
-    result = build_result()
+def test_result_preserves_calibrated_scores():
+    result = make_result()
 
-    assert result.ensemble_score == 0.72
+    assert result.calibrated_scores == make_calibrated_scores()
 
 
-def test_ensemble_result_counts_models():
-    result = build_result()
+def test_result_preserves_anomaly_score():
+    result = make_result()
+
+    assert result.anomaly_score == pytest.approx(0.4)
+
+
+def test_result_model_counts():
+    result = make_result()
 
     assert result.model_count() == 2
     assert result.calibrated_model_count() == 2
@@ -129,190 +100,227 @@ def test_ensemble_result_counts_models():
     assert result.failed_model_count() == 0
 
 
-def test_partial_failure_is_preserved():
+def test_partial_model_failure_is_represented():
     result = EnsembleResult(
         pattern_id="pattern-1",
-        knowledge_id="knowledge-pattern-1",
+        knowledge_id="knowledge-1",
         model_scores=(
-            ModelScore(
-                model_name="IsolationForest",
-                score=-0.2,
-            ),
-            ModelScore(
-                model_name="EllipticEnvelope",
-                score=0.4,
-            ),
+            ModelScore("isolation_forest", -0.2),
+            ModelScore("lof", -0.4),
         ),
         calibrated_scores=(
-            calibrated(
-                "IsolationForest",
-                0.8,
+            CalibratedModelScore(
+                model_name="isolation_forest",
+                raw_score=-0.2,
+                canonical_score=0.2,
+                calibrated_score=0.3,
             ),
-            calibrated(
-                "EllipticEnvelope",
-                0.3,
+            CalibratedModelScore(
+                model_name="lof",
+                raw_score=-0.4,
+                canonical_score=0.4,
+                calibrated_score=0.5,
             ),
         ),
-        ensemble_score=0.55,
+        anomaly_score=0.4,
         failures=(
             ModelFailure(
-                model_name="OneClassSVM",
+                model_name="one_class_svm",
                 error_type="RuntimeError",
-                error_message="Model unavailable",
+                error_message="model unavailable",
             ),
         ),
         metadata=MLMetadata(
             configured_model_names=(
-                "IsolationForest",
-                "EllipticEnvelope",
-                "OneClassSVM",
+                "isolation_forest",
+                "lof",
+                "one_class_svm",
             ),
             successful_model_names=(
-                "IsolationForest",
-                "EllipticEnvelope",
+                "isolation_forest",
+                "lof",
             ),
             failed_model_names=(
-                "OneClassSVM",
+                "one_class_svm",
             ),
         ),
     )
 
     assert result.successful_model_count() == 2
     assert result.failed_model_count() == 1
-    assert (
-        result.failures[0].model_name
-        == "OneClassSVM"
-    )
+    assert result.failures[0].model_name == "one_class_svm"
 
 
-def test_non_finite_ensemble_score_is_rejected():
+def test_nonfinite_anomaly_score_is_rejected():
     with pytest.raises(ValueError):
-        result = build_result()
-
         EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
-            model_scores=result.model_scores,
-            calibrated_scores=result.calibrated_scores,
-            ensemble_score=float("nan"),
-            failures=result.failures,
-            metadata=result.metadata,
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=float("nan"),
+            failures=(),
+            metadata=make_metadata(),
         )
 
 
-def test_empty_model_scores_are_rejected():
+def test_empty_raw_scores_are_rejected():
     with pytest.raises(ValueError):
-        result = build_result()
-
         EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
             model_scores=(),
-            calibrated_scores=result.calibrated_scores,
-            ensemble_score=0.5,
-            failures=result.failures,
-            metadata=result.metadata,
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=0.4,
+            failures=(),
+            metadata=make_metadata(),
         )
 
 
 def test_empty_calibrated_scores_are_rejected():
     with pytest.raises(ValueError):
-        result = build_result()
-
         EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
-            model_scores=result.model_scores,
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
             calibrated_scores=(),
-            ensemble_score=0.5,
-            failures=result.failures,
-            metadata=result.metadata,
+            anomaly_score=0.4,
+            failures=(),
+            metadata=make_metadata(),
         )
 
 
 def test_raw_and_calibrated_model_sets_must_match():
-    result = build_result()
-
     with pytest.raises(ValueError):
         EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
-            model_scores=result.model_scores,
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=(
+                ModelScore("isolation_forest", -0.2),
+                ModelScore("lof", -0.4),
+            ),
             calibrated_scores=(
-                calibrated(
-                    "IsolationForest",
-                    0.8,
-                ),
-                calibrated(
-                    "OneClassSVM",
-                    0.5,
+                CalibratedModelScore(
+                    model_name="isolation_forest",
+                    raw_score=-0.2,
+                    canonical_score=0.2,
+                    calibrated_score=0.3,
                 ),
             ),
-            ensemble_score=0.5,
-            failures=result.failures,
-            metadata=result.metadata,
+            anomaly_score=0.3,
+            failures=(),
+            metadata=make_metadata(),
         )
 
 
-def test_success_metadata_must_match_calibrated_results():
-    result = build_result()
-
+def test_successful_metadata_must_match_calibrated_models():
     with pytest.raises(ValueError):
         EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
-            model_scores=result.model_scores,
-            calibrated_scores=result.calibrated_scores,
-            ensemble_score=0.5,
-            failures=result.failures,
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=0.4,
+            failures=(),
             metadata=MLMetadata(
                 configured_model_names=(
-                    "IsolationForest",
-                    "LocalOutlierFactor",
+                    "isolation_forest",
+                    "lof",
                 ),
                 successful_model_names=(
-                    "IsolationForest",
-                ),
-                failed_model_names=(
-                    "LocalOutlierFactor",
-                ),
-            ),
-        )
-
-
-def test_successful_and_failed_model_cannot_overlap():
-    result = build_result()
-
-    with pytest.raises(ValueError):
-        EnsembleResult(
-            pattern_id=result.pattern_id,
-            knowledge_id=result.knowledge_id,
-            model_scores=result.model_scores,
-            calibrated_scores=result.calibrated_scores,
-            ensemble_score=0.5,
-            failures=(
-                ModelFailure(
-                    model_name="IsolationForest",
-                    error_type="RuntimeError",
-                    error_message="failure",
-                ),
-            ),
-            metadata=MLMetadata(
-                configured_model_names=(
-                    "IsolationForest",
-                    "LocalOutlierFactor",
-                ),
-                successful_model_names=(
-                    "IsolationForest",
-                    "LocalOutlierFactor",
+                    "isolation_forest",
                 ),
                 failed_model_names=(),
             ),
         )
 
 
-def test_ensemble_result_is_immutable():
-    result = build_result()
+def test_failed_metadata_must_match_failures():
+    with pytest.raises(ValueError):
+        EnsembleResult(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=0.4,
+            failures=(),
+            metadata=MLMetadata(
+                configured_model_names=(
+                    "isolation_forest",
+                    "lof",
+                    "one_class_svm",
+                ),
+                successful_model_names=(
+                    "isolation_forest",
+                    "lof",
+                ),
+                failed_model_names=(
+                    "one_class_svm",
+                ),
+            ),
+        )
+
+
+def test_successful_and_failed_models_cannot_overlap():
+    with pytest.raises(ValueError):
+        EnsembleResult(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=0.4,
+            failures=(),
+            metadata=MLMetadata(
+                configured_model_names=(
+                    "isolation_forest",
+                    "lof",
+                ),
+                successful_model_names=(
+                    "isolation_forest",
+                    "lof",
+                ),
+                failed_model_names=(
+                    "lof",
+                ),
+            ),
+        )
+
+
+def test_failure_names_must_be_unique():
+    failure = ModelFailure(
+        model_name="one_class_svm",
+        error_type="RuntimeError",
+        error_message="model unavailable",
+    )
+
+    with pytest.raises(ValueError):
+        EnsembleResult(
+            pattern_id="pattern-1",
+            knowledge_id="knowledge-1",
+            model_scores=make_raw_scores(),
+            calibrated_scores=make_calibrated_scores(),
+            anomaly_score=0.4,
+            failures=(failure, failure),
+            metadata=MLMetadata(
+                configured_model_names=(
+                    "isolation_forest",
+                    "lof",
+                    "one_class_svm",
+                ),
+                successful_model_names=(
+                    "isolation_forest",
+                    "lof",
+                ),
+                failed_model_names=(
+                    "one_class_svm",
+                ),
+            ),
+        )
+
+
+def test_result_is_immutable():
+    result = make_result()
 
     with pytest.raises(AttributeError):
-        result.ensemble_score = 0.9
+        result.anomaly_score = 0.8
+

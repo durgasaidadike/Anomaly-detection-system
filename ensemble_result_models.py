@@ -10,13 +10,6 @@ from score_calibration import CalibratedModelScore
 
 @dataclass(frozen=True)
 class MLMetadata:
-    """
-    Processing metadata describing the participating ML models.
-
-    The metadata is derived from the inference result and does not
-    contain behavioral history or persistent state.
-    """
-
     configured_model_names: tuple[str, ...]
     successful_model_names: tuple[str, ...]
     failed_model_names: tuple[str, ...]
@@ -33,138 +26,101 @@ class MLMetadata:
 
 @dataclass(frozen=True)
 class EnsembleResult:
-    """
-    Complete statistical result for one FeatureVector evaluation.
-
-    raw model scores:
-        Original estimator outputs.
-
-    calibrated scores:
-        Model scores after score calibration.
-
-    ensemble_score:
-        Result produced by the configured fusion policy.
-
-    failures:
-        Models that could not provide a valid prediction.
-    """
-
     pattern_id: str
     knowledge_id: str
-
     model_scores: tuple[ModelScore, ...]
-
     calibrated_scores: tuple[CalibratedModelScore, ...]
-
-    ensemble_score: float
-
+    anomaly_score: float
     failures: tuple[ModelFailure, ...]
-
     metadata: MLMetadata
 
     def __post_init__(self) -> None:
-        if not isinstance(
-            self.pattern_id,
-            str,
-        ) or not self.pattern_id.strip():
-            raise ValueError(
-                "pattern_id must be a non-empty string."
-            )
+        if not isinstance(self.pattern_id, str) or not self.pattern_id.strip():
+            raise ValueError("pattern_id must be a non-empty string")
 
-        if not isinstance(
-            self.knowledge_id,
-            str,
-        ) or not self.knowledge_id.strip():
-            raise ValueError(
-                "knowledge_id must be a non-empty string."
-            )
+        if not isinstance(self.knowledge_id, str) or not self.knowledge_id.strip():
+            raise ValueError("knowledge_id must be a non-empty string")
 
         if not self.model_scores:
-            raise ValueError(
-                "At least one valid model score is required."
-            )
+            raise ValueError("model_scores must not be empty")
 
         if not self.calibrated_scores:
-            raise ValueError(
-                "At least one calibrated model score is required."
-            )
+            raise ValueError("calibrated_scores must not be empty")
 
-        numeric_score = float(
-            self.ensemble_score
+        if not isinstance(self.anomaly_score, (int, float)):
+            raise ValueError("anomaly_score must be numeric")
+
+        anomaly_score = float(self.anomaly_score)
+
+        if not math.isfinite(anomaly_score):
+            raise ValueError("anomaly_score must be finite")
+
+        if not isinstance(self.metadata, MLMetadata):
+            raise TypeError("metadata must be an MLMetadata instance")
+
+        raw_model_names = tuple(
+            score.model_name for score in self.model_scores
         )
 
-        if not math.isfinite(numeric_score):
-            raise ValueError(
-                "ensemble_score must be finite."
-            )
-
-        raw_names = tuple(
-            score.model_name
-            for score in self.model_scores
+        calibrated_model_names = tuple(
+            score.model_name for score in self.calibrated_scores
         )
 
-        calibrated_names = tuple(
-            score.model_name
-            for score in self.calibrated_scores
+        if len(raw_model_names) != len(set(raw_model_names)):
+            raise ValueError("model_scores must not contain duplicate model names")
+
+        if len(calibrated_model_names) != len(set(calibrated_model_names)):
+            raise ValueError(
+                "calibrated_scores must not contain duplicate model names"
+            )
+
+        if set(raw_model_names) != set(calibrated_model_names):
+            raise ValueError(
+                "raw and calibrated scores must refer to the same models"
+            )
+
+        successful_names = set(self.metadata.successful_model_names)
+        calibrated_names = set(calibrated_model_names)
+
+        if successful_names != calibrated_names:
+            raise ValueError(
+                "metadata successful_model_names must match calibrated scores"
+            )
+
+        failed_names = set(self.metadata.failed_model_names)
+
+        if successful_names & failed_names:
+            raise ValueError(
+                "a model cannot be both successful and failed"
+            )
+
+        failure_names = tuple(
+            failure.model_name for failure in self.failures
         )
 
-        if len(raw_names) != len(
-            set(raw_names)
-        ):
+        if len(failure_names) != len(set(failure_names)):
             raise ValueError(
-                "Model scores must contain unique model names."
+                "failures must not contain duplicate model names"
             )
 
-        if len(calibrated_names) != len(
-            set(calibrated_names)
-        ):
+        if set(failure_names) != failed_names:
             raise ValueError(
-                "Calibrated model scores must contain "
-                "unique model names."
+                "metadata failed_model_names must match failures"
             )
 
-        if set(raw_names) != set(
-            calibrated_names
-        ):
+        configured_names = set(self.metadata.configured_model_names)
+
+        if not successful_names.issubset(configured_names):
             raise ValueError(
-                "Raw and calibrated model results "
-                "must reference the same models."
+                "successful models must be configured"
             )
 
-        metadata_successful = set(
-            self.metadata.successful_model_names
-        )
-
-        calibrated_model_set = set(
-            calibrated_names
-        )
-
-        if metadata_successful != (
-            calibrated_model_set
-        ):
+        if not failed_names.issubset(configured_names):
             raise ValueError(
-                "Metadata successful-model names must "
-                "match calibrated model results."
+                "failed models must be configured"
             )
 
-        failure_names = {
-            failure.model_name
-            for failure in self.failures
-        }
-
-        if failure_names.intersection(
-            calibrated_model_set
-        ):
-            raise ValueError(
-                "A model cannot be both successful "
-                "and failed."
-            )
-
-        object.__setattr__(
-            self,
-            "ensemble_score",
-            numeric_score,
-        )
+        object.__setattr__(self, "anomaly_score", anomaly_score)
 
     def model_count(self) -> int:
         return len(self.model_scores)
@@ -173,7 +129,8 @@ class EnsembleResult:
         return len(self.calibrated_scores)
 
     def successful_model_count(self) -> int:
-        return len(self.calibrated_scores)
+        return self.metadata.successful_model_count()
 
     def failed_model_count(self) -> int:
-        return len(self.failures)
+        return self.metadata.failed_model_count()
+
