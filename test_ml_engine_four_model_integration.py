@@ -7,6 +7,11 @@ from sklearn.svm import OneClassSVM
 
 from ensemble_result_models import EnsembleResult
 from feature_vector_models import FeatureVector
+from decision_engine import DecisionEngine
+from decision_models import (
+    DecisionConfiguration,
+    RiskLevel,
+)
 from machine_learning_engine import MachineLearningEngine
 from ml_inference_engine import MLInferenceEngine
 from ml_model_adapters import (
@@ -135,6 +140,30 @@ def build_engine():
 
     return engine, adapters
 
+
+def decision_configuration():
+    return DecisionConfiguration(
+        thresholds={
+            RiskLevel.NORMAL: 0.0,
+            RiskLevel.SUSPICIOUS: 1.0,
+            RiskLevel.HIGH_RISK: 2.0,
+            RiskLevel.CRITICAL: 3.0,
+        },
+        decisions={
+            RiskLevel.NORMAL: "ALLOW",
+            RiskLevel.SUSPICIOUS: "WARN",
+            RiskLevel.HIGH_RISK: "INTERVENE",
+            RiskLevel.CRITICAL: "BLOCK",
+        },
+        actions={
+            RiskLevel.NORMAL: "NO_ACTION",
+            RiskLevel.SUSPICIOUS: "WARNING",
+            RiskLevel.HIGH_RISK: "PROTECT",
+            RiskLevel.CRITICAL: "ESCALATE",
+        },
+        safe_default_risk_level=RiskLevel.HIGH_RISK,
+    )
+
 def test_real_four_model_prism_pipeline():
     engine, adapters = build_engine()
 
@@ -190,6 +219,58 @@ def test_real_four_model_prism_pipeline():
         result.anomaly_score,
         float,
     )
+
+    original_anomaly_score = result.anomaly_score
+    original_metadata = result.metadata
+    original_model_scores = result.model_scores
+
+    decision_engine = DecisionEngine(
+        decision_configuration()
+    )
+
+    decision = decision_engine.make_decision_from_ensemble(
+        result
+    )
+
+    assert decision is not None
+
+    assert decision.metadata.evaluated_from_score == (
+        result.anomaly_score
+    )
+
+    assert decision.metadata.model_metadata is (
+        result.metadata
+    )
+
+    assert decision.risk_level in (
+        RiskLevel.NORMAL,
+        RiskLevel.SUSPICIOUS,
+        RiskLevel.HIGH_RISK,
+        RiskLevel.CRITICAL,
+    )
+
+    assert isinstance(
+        decision.decision,
+        str,
+    )
+
+    assert decision.decision.strip()
+
+    assert isinstance(
+        decision.recommended_action,
+        str,
+    )
+
+    assert decision.recommended_action.strip()
+
+    assert decision.metadata.status.value == "SUCCESS"
+    assert decision.metadata.failure_reason is None
+
+    assert result.anomaly_score == original_anomaly_score
+
+    assert result.metadata is original_metadata
+
+    assert result.model_scores == original_model_scores
 
 
 def test_real_four_model_pipeline_produces_finite_scores():
