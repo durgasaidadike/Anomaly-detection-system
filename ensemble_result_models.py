@@ -14,6 +14,44 @@ class MLMetadata:
     successful_model_names: tuple[str, ...]
     failed_model_names: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        configured = tuple(self.configured_model_names)
+        successful = tuple(self.successful_model_names)
+        failed = tuple(self.failed_model_names)
+
+        for collection_name, names in (
+            ("configured_model_names", configured),
+            ("successful_model_names", successful),
+            ("failed_model_names", failed),
+        ):
+            for name in names:
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError(
+                        f"{collection_name} must contain "
+                        "non-empty model names"
+                    )
+
+            if len(names) != len(set(names)):
+                raise ValueError(
+                    f"{collection_name} must not contain duplicates"
+                )
+
+        if not configured:
+            raise ValueError(
+                "configured_model_names must not be empty"
+            )
+
+        if set(successful) & set(failed):
+            raise ValueError(
+                "a model cannot be both successful and failed"
+            )
+
+        if set(successful) | set(failed) != set(configured):
+            raise ValueError(
+                "every configured model must be classified "
+                "as successful or failed"
+            )
+
     def configured_model_count(self) -> int:
         return len(self.configured_model_names)
 
@@ -118,6 +156,15 @@ class EnsembleResult:
         if not failed_names.issubset(configured_names):
             raise ValueError(
                 "failed models must be configured"
+            )
+
+        if (
+            set(self.metadata.successful_model_names)
+            | set(self.metadata.failed_model_names)
+        ) != configured_names:
+            raise ValueError(
+                "successful and failed model names must cover "
+                "all configured models"
             )
 
         object.__setattr__(self, "anomaly_score", anomaly_score)

@@ -35,8 +35,6 @@ def make_metadata():
         configured_model_names=(
             "isolation_forest",
             "lof",
-            "one_class_svm",
-            "elliptic_envelope",
         ),
         successful_model_names=(
             "isolation_forest",
@@ -61,7 +59,7 @@ def make_result():
 def test_metadata_counts():
     metadata = make_metadata()
 
-    assert metadata.configured_model_count() == 4
+    assert metadata.configured_model_count() == 2
     assert metadata.successful_model_count() == 2
     assert metadata.failed_model_count() == 0
 
@@ -323,4 +321,79 @@ def test_result_is_immutable():
 
     with pytest.raises(AttributeError):
         result.anomaly_score = 0.8
+
+def test_metadata_rejects_duplicate_configured_models():
+    with pytest.raises(ValueError):
+        MLMetadata(
+            configured_model_names=(
+                "model_a",
+                "model_a",
+            ),
+            successful_model_names=(
+                "model_a",
+            ),
+            failed_model_names=(),
+        )
+
+
+def test_metadata_rejects_empty_configured_models():
+    with pytest.raises(ValueError):
+        MLMetadata(
+            configured_model_names=(),
+            successful_model_names=(),
+            failed_model_names=(),
+        )
+
+
+def test_metadata_rejects_unclassified_configured_model():
+    with pytest.raises(ValueError):
+        MLMetadata(
+            configured_model_names=(
+                "model_a",
+                "model_b",
+                "model_c",
+            ),
+            successful_model_names=(
+                "model_a",
+            ),
+            failed_model_names=(
+                "model_b",
+            ),
+        )
+
+
+def test_metadata_rejects_empty_model_name():
+    with pytest.raises(ValueError):
+        MLMetadata(
+            configured_model_names=(
+                "model_a",
+                "",
+            ),
+            successful_model_names=(
+                "model_a",
+                "",
+            ),
+            failed_model_names=(),
+        )
+
+
+def test_metadata_requires_complete_success_failure_coverage():
+    metadata = MLMetadata(
+        configured_model_names=(
+            "model_a",
+            "model_b",
+            "model_c",
+        ),
+        successful_model_names=(
+            "model_a",
+            "model_c",
+        ),
+        failed_model_names=(
+            "model_b",
+        ),
+    )
+
+    assert metadata.configured_model_count() == 3
+    assert metadata.successful_model_count() == 2
+    assert metadata.failed_model_count() == 1
 
