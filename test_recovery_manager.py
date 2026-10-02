@@ -621,7 +621,9 @@ def test_restore_requires_backup_reference():
         file_metadata=build_file_metadata(),
         backup_reference=None,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match="requires a valid BackupReference"
+    ):
         manager.execute(request)
 
 
@@ -640,7 +642,9 @@ def test_rollback_requires_backup_reference():
         file_metadata=build_file_metadata(),
         backup_reference=None,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match="requires a valid BackupReference"
+    ):
         manager.execute(request)
 
 
