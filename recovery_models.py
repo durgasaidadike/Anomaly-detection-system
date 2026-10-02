@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Mapping
 
 from decision_models import DecisionResult
 
@@ -141,3 +143,84 @@ class RecoveryRequest:
             raise ValueError(
                 "backup_reference must be BackupReference or None"
             )
+
+
+@dataclass(frozen=True)
+class RecoveryResult:
+    """
+    Immutable output contract produced by Recovery Manager.
+
+    The concrete semantics of recovery status, report,
+    action metadata, and recovery log remain policy-driven
+    and are implemented by later recovery workflow logic.
+    """
+
+    status: str
+    report: str
+    action_metadata: Mapping[str, str]
+    recovery_log: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.status, str)
+            or not self.status.strip()
+        ):
+            raise ValueError(
+                "status must be a non-empty string"
+            )
+        if (
+            not isinstance(self.report, str)
+            or not self.report.strip()
+        ):
+            raise ValueError(
+                "report must be a non-empty string"
+            )
+        if not isinstance(
+            self.action_metadata,
+            Mapping,
+        ):
+            raise ValueError(
+                "action_metadata must be a mapping"
+            )
+        action_metadata = dict(self.action_metadata)
+        for key, value in action_metadata.items():
+            if (
+                not isinstance(key, str)
+                or not key.strip()
+            ):
+                raise ValueError(
+                    "action_metadata keys must be non-empty strings"
+                )
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+            ):
+                raise ValueError(
+                    "action_metadata values must be non-empty strings"
+                )
+        object.__setattr__(
+            self,
+            "action_metadata",
+            MappingProxyType(action_metadata),
+        )
+        if not isinstance(
+            self.recovery_log,
+            (list, tuple),
+        ):
+            raise ValueError(
+                "recovery_log must be a tuple of strings"
+            )
+        recovery_log = tuple(self.recovery_log)
+        for entry in recovery_log:
+            if (
+                not isinstance(entry, str)
+                or not entry.strip()
+            ):
+                raise ValueError(
+                    "recovery_log entries must be non-empty strings"
+                )
+        object.__setattr__(
+            self,
+            "recovery_log",
+            recovery_log,
+        )

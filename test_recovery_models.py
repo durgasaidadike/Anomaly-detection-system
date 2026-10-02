@@ -12,6 +12,7 @@ from recovery_models import (
     FileMetadata,
     RecoveryPolicy,
     RecoveryRequest,
+    RecoveryResult,
 )
 
 
@@ -291,5 +292,99 @@ def test_recovery_request_is_immutable():
     )
     with pytest.raises(AttributeError):
         request.recovery_policy = build_policy()
+
+
+def test_recovery_result_accepts_valid_output():
+    result = RecoveryResult(
+        status="COMPLETED",
+        report="Recovery workflow completed.",
+        action_metadata={
+            "action": "restore"
+        },
+        recovery_log=(
+            "Recovery request validated.",
+            "Recovery completed.",
+        ),
+    )
+    assert result.status == "COMPLETED"
+    assert (
+        result.report
+        == "Recovery workflow completed."
+    )
+    assert (
+        result.action_metadata["action"]
+        == "restore"
+    )
+    assert len(result.recovery_log) == 2
+
+
+def test_recovery_result_is_immutable():
+    result = RecoveryResult(
+        status="COMPLETED",
+        report="Recovery workflow completed.",
+        action_metadata={
+            "action": "restore"
+        },
+        recovery_log=(
+            "Recovery completed.",
+        ),
+    )
+    with pytest.raises(AttributeError):
+        result.status = "CHANGED"
+    with pytest.raises(AttributeError):
+        result.report = "CHANGED"
+    with pytest.raises(AttributeError):
+        result.recovery_log = ()
+
+
+def test_recovery_result_rejects_empty_status():
+    with pytest.raises(ValueError):
+        RecoveryResult(
+            status="   ",
+            report="Recovery workflow completed.",
+            action_metadata={"action": "restore"},
+            recovery_log=("Recovery completed.",),
+        )
+
+
+def test_recovery_result_rejects_empty_report():
+    with pytest.raises(ValueError):
+        RecoveryResult(
+            status="COMPLETED",
+            report="",
+            action_metadata={"action": "restore"},
+            recovery_log=("Recovery completed.",),
+        )
+
+
+def test_recovery_result_rejects_invalid_action_metadata():
+    with pytest.raises(ValueError):
+        RecoveryResult(
+            status="COMPLETED",
+            report="Recovery workflow completed.",
+            action_metadata="restore",
+            recovery_log=("Recovery completed.",),
+        )
+
+
+def test_recovery_result_rejects_empty_action_metadata_entry():
+    with pytest.raises(ValueError):
+        RecoveryResult(
+            status="COMPLETED",
+            report="Recovery workflow completed.",
+            action_metadata={"action": "   "},
+            recovery_log=("Recovery completed.",),
+        )
+
+
+def test_recovery_result_rejects_invalid_recovery_log_entry():
+    with pytest.raises(ValueError):
+        RecoveryResult(
+            status="COMPLETED",
+            report="Recovery workflow completed.",
+            action_metadata={"action": "restore"},
+            recovery_log=("Recovery completed.", ""),
+        )
+
 
 
