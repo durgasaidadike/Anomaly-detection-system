@@ -10,6 +10,7 @@ from ensemble_result_models import MLMetadata
 from recovery_models import (
     BackupReference,
     FileMetadata,
+    RecoveryAction,
     RecoveryPolicy,
     RecoveryRequest,
     RecoveryResult,
@@ -64,7 +65,8 @@ def build_file_metadata() -> FileMetadata:
 
 def build_policy() -> RecoveryPolicy:
     return RecoveryPolicy(
-        policy_name="QUARANTINE_AND_RESTORE",
+        policy_id="policy-001",
+        action=RecoveryAction.RESTORE_PREVIOUS_VERSION,
     )
 
 
@@ -158,28 +160,51 @@ def test_file_metadata_is_immutable():
 
 def test_recovery_policy_accepts_valid_contract():
     policy = build_policy()
-    assert policy.policy_name == "QUARANTINE_AND_RESTORE"
+    assert policy.policy_id == "policy-001"
+    assert (
+        policy.action
+        == RecoveryAction.RESTORE_PREVIOUS_VERSION
+    )
 
 
-def test_recovery_policy_rejects_empty_policy_name():
+def test_recovery_policy_rejects_empty_policy_id():
     with pytest.raises(ValueError):
-        RecoveryPolicy(policy_name="")
+        RecoveryPolicy(
+            policy_id="",
+            action=RecoveryAction.RESTORE_PREVIOUS_VERSION,
+        )
 
 
-def test_recovery_policy_rejects_whitespace_policy_name():
+def test_recovery_policy_rejects_whitespace_policy_id():
     with pytest.raises(ValueError):
-        RecoveryPolicy(policy_name="   ")
+        RecoveryPolicy(
+            policy_id="   ",
+            action=RecoveryAction.RESTORE_PREVIOUS_VERSION,
+        )
 
 
-def test_recovery_policy_rejects_non_string_policy_name():
+def test_recovery_policy_rejects_non_string_policy_id():
     with pytest.raises(ValueError):
-        RecoveryPolicy(policy_name=None)
+        RecoveryPolicy(
+            policy_id=None,
+            action=RecoveryAction.RESTORE_PREVIOUS_VERSION,
+        )
+
+
+def test_recovery_policy_rejects_invalid_action():
+    with pytest.raises(TypeError):
+        RecoveryPolicy(
+            policy_id="policy-invalid",
+            action="RESTORE",
+        )
 
 
 def test_recovery_policy_is_immutable():
     policy = build_policy()
     with pytest.raises(AttributeError):
-        policy.policy_name = "OTHER"
+        policy.policy_id = "changed"
+    with pytest.raises(AttributeError):
+        policy.action = RecoveryAction.NO_ACTION
 
 
 def test_backup_reference_accepts_valid_contract():
@@ -219,7 +244,11 @@ def test_recovery_request_accepts_valid_contract():
     )
     assert request.decision_result.decision == "INTERVENE"
     assert request.decision_result.risk_level == RiskLevel.HIGH_RISK
-    assert request.recovery_policy.policy_name == "QUARANTINE_AND_RESTORE"
+    assert request.recovery_policy.policy_id == "policy-001"
+    assert (
+        request.recovery_policy.action
+        == RecoveryAction.RESTORE_PREVIOUS_VERSION
+    )
     assert request.file_metadata.file_name == "report.docx"
     assert request.backup_reference.backup_id == "backup-001"
 
@@ -387,4 +416,37 @@ def test_recovery_result_rejects_invalid_recovery_log_entry():
         )
 
 
+
+
+
+def test_recovery_policy_accepts_valid_action():
+    policy = RecoveryPolicy(
+        policy_id="policy-restore",
+        action=RecoveryAction.RESTORE_PREVIOUS_VERSION,
+    )
+    assert policy.policy_id == "policy-restore"
+    assert (
+        policy.action
+        == RecoveryAction.RESTORE_PREVIOUS_VERSION
+    )
+
+
+def test_all_defined_recovery_actions_are_distinct():
+    values = [action.value for action in RecoveryAction]
+    assert len(values) == len(set(values))
+
+
+def test_recovery_request_preserves_selected_action():
+    request = RecoveryRequest(
+        decision_result=build_decision_result(),
+        recovery_policy=RecoveryPolicy(
+            policy_id="policy-quarantine",
+            action=RecoveryAction.TEMPORARY_QUARANTINE,
+        ),
+        file_metadata=build_file_metadata(),
+    )
+    assert (
+        request.recovery_policy.action
+        == RecoveryAction.TEMPORARY_QUARANTINE
+    )
 

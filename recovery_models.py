@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Mapping
 
@@ -48,24 +49,51 @@ class FileMetadata:
             )
 
 
+class RecoveryAction(str, Enum):
+    """
+    Recovery actions defined by the PRISM recovery architecture.
+
+    These values describe the action to be executed.
+    They do not implement the action themselves.
+    """
+
+    NO_ACTION = "NO_ACTION"
+    WARNING_NOTIFICATION = "WARNING_NOTIFICATION"
+    INCREASED_MONITORING = "INCREASED_MONITORING"
+    CREATE_RECOVERY_POINT = "CREATE_RECOVERY_POINT"
+    TEMPORARY_QUARANTINE = "TEMPORARY_QUARANTINE"
+    ROLLBACK_OPERATION = "ROLLBACK_OPERATION"
+    RESTORE_PREVIOUS_VERSION = "RESTORE_PREVIOUS_VERSION"
+    ADMINISTRATIVE_ESCALATION = "ADMINISTRATIVE_ESCALATION"
+
+
 @dataclass(frozen=True)
 class RecoveryPolicy:
     """
-    Identifies the recovery policy to be applied.
+    Immutable recovery policy reference.
 
-    Policy behavior itself is intentionally outside
-    this contract and will be implemented later.
+    The policy identifies the configured recovery behavior.
+    The action is explicit so the Recovery Manager does not
+    need to infer recovery semantics from free-form text.
     """
 
-    policy_name: str
+    policy_id: str
+    action: RecoveryAction
 
     def __post_init__(self) -> None:
         if (
-            not isinstance(self.policy_name, str)
-            or not self.policy_name.strip()
+            not isinstance(self.policy_id, str)
+            or not self.policy_id.strip()
         ):
             raise ValueError(
-                "policy_name must be a non-empty string"
+                "policy_id must be a non-empty string"
+            )
+        if not isinstance(
+            self.action,
+            RecoveryAction,
+        ):
+            raise TypeError(
+                "action must be RecoveryAction"
             )
 
 
