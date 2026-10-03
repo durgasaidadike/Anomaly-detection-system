@@ -1,4 +1,5 @@
 import ast
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -409,3 +410,92 @@ def test_gateway_rejects_invalid_validator():
             event_processor=processor,
             validator=object(),
         )
+
+
+def test_gateway_processes_concurrent_requests_independently():
+    processor = FakeProcessor()
+    app = create_app(
+        event_processor=processor,
+    )
+
+    payloads = [
+        {
+            "request_id": f"request-{index}",
+            "event_type": "MODIFIED",
+            "file_path": f"/example/file-{index}.txt",
+        }
+        for index in range(20)
+    ]
+
+    def send_request(payload):
+        with app.test_client() as client:
+            response = client.post(
+                "/analyze-event",
+                json=payload,
+            )
+
+            return (
+                response.status_code,
+                response.get_json(),
+            )
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(
+            executor.map(
+                send_request,
+                payloads,
+            )
+        )
+
+    assert len(results) == len(payloads)
+
+    for status_code, response_payload in results:
+        assert status_code == 200
+        assert response_payload["received"] is True
+
+    received_payloads = [
+        payload
+        for payload in processor.calls
+    ]
+
+    assert len(received_payloads) == len(payloads)
+    assert {
+        payload["request_id"]
+        for payload in received_payloads
+    } == {
+        payload["request_id"]
+        for payload in payloads
+    }
+
+
+def test_gateway_does_not_reuse_previous_request_payload():
+    processor = FakeProcessor()
+    app = create_app(
+        event_processor=processor,
+    )
+
+    with app.test_client() as client:
+        first_payload = {
+            "request_id": "first",
+            "value": "alpha",
+        }
+        second_payload = {
+            "request_id": "second",
+            "value": "beta",
+        }
+
+        first_response = client.post(
+            "/analyze-event",
+            json=first_payload,
+        )
+        second_response = client.post(
+            "/analyze-event",
+            json=second_payload,
+        )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert processor.calls == [
+        first_payload,
+        second_payload,
+    ]
