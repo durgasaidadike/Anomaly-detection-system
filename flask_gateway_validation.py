@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -18,14 +19,10 @@ class ValidationResult:
 
 class GatewayPayloadValidator:
     """
-    Validates the structural API contract of incoming payloads.
+    Validates and sanitizes the structural API payload.
 
-    The validator intentionally does not contain behavioral intelligence
-    or domain-specific event interpretation.
-
-    Optional required_fields allow a later authoritative API contract
-    to define required fields without embedding undocumented assumptions
-    into Module 15.
+    This validator does not interpret filesystem behavior,
+    calculate features, perform anomaly detection, or make decisions.
     """
 
     def __init__(
@@ -58,24 +55,25 @@ class GatewayPayloadValidator:
 
     @property
     def required_fields(self) -> tuple[str, ...]:
-        """
-        Return the configured required fields.
-        """
-
         return self._required_fields
 
     def validate(
         self,
         payload: Any,
     ) -> ValidationResult:
-        """
-        Validate the structural payload contract.
-        """
-
         if not isinstance(payload, Mapping):
             return ValidationResult(
                 valid=False,
                 error="Payload must be a JSON object.",
+            )
+
+        try:
+            self._sanitize_value(payload)
+
+        except (TypeError, ValueError) as exc:
+            return ValidationResult(
+                valid=False,
+                error=str(exc),
             )
 
         missing_fields = tuple(
@@ -92,3 +90,78 @@ class GatewayPayloadValidator:
             )
 
         return ValidationResult(valid=True)
+
+    def sanitize(
+        self,
+        payload: Any,
+    ) -> dict[str, Any]:
+        """
+        Return a fresh JSON-safe copy of the payload.
+
+        The returned structure is detached from the Flask request
+        object so downstream processing cannot mutate the original
+        request-owned structure.
+        """
+
+        if not isinstance(payload, Mapping):
+            raise TypeError(
+                "Payload must be a JSON object."
+            )
+
+        sanitized = self._sanitize_value(payload)
+
+        if not isinstance(sanitized, dict):
+            raise TypeError(
+                "Sanitized payload must be a JSON object."
+            )
+
+        return sanitized
+
+    def _sanitize_value(
+        self,
+        value: Any,
+    ) -> Any:
+        if value is None:
+            return None
+
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, str):
+            return value
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ValueError(
+                    "Payload contains a non-finite numeric value."
+                )
+
+            return value
+
+        if isinstance(value, Mapping):
+            sanitized_mapping: dict[str, Any] = {}
+
+            for key, nested_value in value.items():
+                if not isinstance(key, str):
+                    raise TypeError(
+                        "JSON object keys must be strings."
+                    )
+
+                sanitized_mapping[key] = (
+                    self._sanitize_value(nested_value)
+                )
+
+            return sanitized_mapping
+
+        if isinstance(value, list):
+            return [
+                self._sanitize_value(item)
+                for item in value
+            ]
+
+        raise TypeError(
+            "Payload contains an unsupported value type."
+        )

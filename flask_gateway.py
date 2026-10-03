@@ -117,6 +117,16 @@ class FlaskGateway:
             self._handle_payload_too_large,
         )
 
+        app.register_error_handler(
+            404,
+            self._handle_not_found,
+        )
+
+        app.register_error_handler(
+            405,
+            self._handle_method_not_allowed,
+        )
+
         app.add_url_rule(
             "/health",
             view_func=self.health,
@@ -148,6 +158,30 @@ class FlaskGateway:
                 "error": "Request payload is too large.",
             }
         ), 413
+
+    @staticmethod
+    def _handle_not_found(_error):
+        """
+        Return a consistent JSON response for unknown routes.
+        """
+
+        return jsonify(
+            {
+                "error": "Endpoint not found.",
+            }
+        ), 404
+
+    @staticmethod
+    def _handle_method_not_allowed(_error):
+        """
+        Return a consistent JSON response for unsupported HTTP methods.
+        """
+
+        return jsonify(
+            {
+                "error": "HTTP method not allowed.",
+            }
+        ), 405
 
     def _is_authorized(self) -> bool:
         """
@@ -235,7 +269,25 @@ class FlaskGateway:
             return jsonify(response), 400
 
         try:
-            result = self._event_processor(payload)
+            sanitized_payload = self._validator.sanitize(
+                payload
+            )
+
+        except (TypeError, ValueError):
+            logger.exception(
+                "Gateway payload sanitization failed."
+            )
+
+            return jsonify(
+                {
+                    "error": "Invalid request payload.",
+                }
+            ), 400
+
+        try:
+            result = self._event_processor(
+                sanitized_payload
+            )
 
         except TimeoutError:
             logger.exception(
