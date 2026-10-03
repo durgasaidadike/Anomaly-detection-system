@@ -3,6 +3,7 @@ import ast
 import pytest
 
 from flask_gateway import FlaskGateway, create_app
+from flask_gateway_validation import GatewayPayloadValidator
 
 
 class FakeProcessor:
@@ -246,3 +247,165 @@ def test_gateway_module_has_no_forbidden_business_dependencies():
     assert imported_modules.isdisjoint(
         forbidden_modules
     )
+
+
+def test_validator_accepts_json_object_without_undocumented_fields():
+    validator = GatewayPayloadValidator()
+
+    result = validator.validate(
+        {
+            "event_type": "MODIFIED",
+            "file_path": "/example/file.txt",
+        }
+    )
+
+    assert result.valid is True
+    assert result.error is None
+    assert result.missing_fields == ()
+
+
+def test_validator_rejects_non_mapping_payload():
+    validator = GatewayPayloadValidator()
+
+    result = validator.validate(
+        ["not", "an", "object"]
+    )
+
+    assert result.valid is False
+    assert result.error == (
+        "Payload must be a JSON object."
+    )
+
+
+def test_validator_reports_configured_missing_fields():
+    validator = GatewayPayloadValidator(
+        required_fields=(
+            "event_type",
+            "file_path",
+        )
+    )
+
+    result = validator.validate(
+        {
+            "event_type": "MODIFIED",
+        }
+    )
+
+    assert result.valid is False
+    assert result.error == (
+        "Missing required fields."
+    )
+    assert result.missing_fields == (
+        "file_path",
+    )
+
+
+def test_gateway_reports_missing_configured_fields():
+    processor = FakeProcessor()
+
+    validator = GatewayPayloadValidator(
+        required_fields=(
+            "event_type",
+            "file_path",
+        )
+    )
+
+    app = create_app(
+        event_processor=processor,
+        validator=validator,
+    )
+
+    client = app.test_client()
+
+    response = client.post(
+        "/analyze-event",
+        json={
+            "event_type": "MODIFIED",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.get_json() == {
+        "error": "Missing required fields.",
+        "missing_fields": [
+            "file_path",
+        ],
+    }
+
+    assert processor.calls == []
+
+
+def test_gateway_accepts_payload_when_configured_fields_are_present():
+    processor = FakeProcessor()
+
+    validator = GatewayPayloadValidator(
+        required_fields=(
+            "event_type",
+            "file_path",
+        )
+    )
+
+    app = create_app(
+        event_processor=processor,
+        validator=validator,
+    )
+
+    client = app.test_client()
+
+    payload = {
+        "event_type": "MODIFIED",
+        "file_path": "/example/file.txt",
+    }
+
+    response = client.post(
+        "/analyze-event",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert processor.calls == [payload]
+
+
+def test_gateway_supports_configurable_large_request_limit():
+    processor = FakeProcessor()
+
+    app = create_app(
+        event_processor=processor,
+        max_content_length=64,
+    )
+
+    client = app.test_client()
+
+    response = client.post(
+        "/analyze-event",
+        json={
+            "payload": "x" * 256,
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.get_json() == {
+        "error": "Request payload is too large.",
+    }
+
+    assert processor.calls == []
+
+
+def test_gateway_does_not_require_a_payload_limit_by_default():
+    processor = FakeProcessor()
+
+    app = create_app(
+        event_processor=processor,
+    )
+
+    assert app.config["MAX_CONTENT_LENGTH"] is None
+
+
+def test_gateway_rejects_invalid_validator():
+    processor = FakeProcessor()
+
+    with pytest.raises(TypeError):
+        FlaskGateway(
+            event_processor=processor,
+            validator=object(),
+        )

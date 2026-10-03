@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any, Optional, Protocol
 
 from flask import Flask, Request, jsonify, request
+
+from flask_gateway_validation import (
+    GatewayPayloadValidator,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -13,11 +17,6 @@ logger = logging.getLogger(__name__)
 class EventProcessor(Protocol):
     """
     Boundary for the Python behavioral intelligence pipeline.
-
-    The Flask Gateway knows only that it receives a JSON-compatible
-    mapping and returns a response-compatible result.
-
-    Business logic remains outside the Gateway.
     """
 
     def __call__(
@@ -31,9 +30,8 @@ class RequestAuthorizer(Protocol):
     """
     Optional authorization boundary.
 
-    Authentication/authorization mechanics are intentionally injected
-    rather than implemented inside the Flask Gateway because the
-    Module 15 specification does not define a concrete auth protocol.
+    A concrete authentication mechanism is intentionally not defined
+    here because Module 15 does not specify one.
     """
 
     def __call__(
@@ -47,32 +45,35 @@ class FlaskGateway:
     """
     PRISM Module 15 - Flask Gateway.
 
-    Responsibilities:
+    Communication responsibilities only:
     - Receive API requests.
-    - Validate request structure.
+    - Validate requests.
     - Route requests.
-    - Invoke the injected Python pipeline.
-    - Return API responses.
+    - Invoke the Python pipeline.
+    - Return responses.
     - Log gateway failures.
 
-    This class deliberately contains:
-    - No ML logic.
-    - No behavioral analysis.
-    - No Candidate Pattern logic.
-    - No behavioral persistence.
-    - No recovery logic.
-
-    The Gateway is stateless with respect to request processing.
+    No behavioral intelligence belongs here.
     """
 
     def __init__(
         self,
         event_processor: EventProcessor,
+        validator: Optional[GatewayPayloadValidator] = None,
         authorizer: Optional[RequestAuthorizer] = None,
+        max_content_length: Optional[int] = None,
     ) -> None:
         if not callable(event_processor):
             raise TypeError(
                 "event_processor must be callable."
+            )
+
+        if validator is not None and not isinstance(
+            validator,
+            GatewayPayloadValidator,
+        ):
+            raise TypeError(
+                "validator must be a GatewayPayloadValidator."
             )
 
         if authorizer is not None and not callable(authorizer):
@@ -80,18 +81,41 @@ class FlaskGateway:
                 "authorizer must be callable when provided."
             )
 
+        if max_content_length is not None:
+            if not isinstance(max_content_length, int):
+                raise TypeError(
+                    "max_content_length must be an integer or None."
+                )
+
+            if max_content_length <= 0:
+                raise ValueError(
+                    "max_content_length must be greater than zero."
+                )
+
         self._event_processor = event_processor
+        self._validator = (
+            validator
+            or GatewayPayloadValidator()
+        )
         self._authorizer = authorizer
+        self._max_content_length = max_content_length
 
     def create_app(self) -> Flask:
         """
         Create and configure the Flask application.
-
-        A new Flask application can be created for testing or
-        deployment without introducing request-specific state.
         """
 
         app = Flask(__name__)
+
+        if self._max_content_length is not None:
+            app.config["MAX_CONTENT_LENGTH"] = (
+                self._max_content_length
+            )
+
+        app.register_error_handler(
+            413,
+            self._handle_payload_too_large,
+        )
 
         app.add_url_rule(
             "/health",
@@ -113,11 +137,21 @@ class FlaskGateway:
 
         return app
 
+    @staticmethod
+    def _handle_payload_too_large(_error):
+        """
+        Handle requests exceeding the configured Gateway payload limit.
+        """
+
+        return jsonify(
+            {
+                "error": "Request payload is too large.",
+            }
+        ), 413
+
     def _is_authorized(self) -> bool:
         """
         Evaluate the optional authorization boundary.
-
-        No concrete authentication scheme is assumed here.
         """
 
         if self._authorizer is None:
@@ -132,29 +166,19 @@ class FlaskGateway:
             return False
 
     @staticmethod
-    def _validate_json_object() -> Optional[Mapping[str, Any]]:
+    def _get_json_payload() -> Any:
         """
-        Validate that the request contains a JSON object.
-
-        Returns the decoded mapping when valid.
-        Returns None when the request is invalid.
+        Decode JSON without allowing Flask to raise a parsing exception.
         """
 
         if not request.is_json:
             return None
 
-        payload = request.get_json(silent=True)
-
-        if not isinstance(payload, dict):
-            return None
-
-        return payload
+        return request.get_json(silent=True)
 
     def health(self):
         """
         Gateway health endpoint.
-
-        No behavioral processing is performed.
         """
 
         return jsonify(
@@ -166,9 +190,6 @@ class FlaskGateway:
     def status(self):
         """
         Gateway status endpoint.
-
-        This reports Gateway availability only; it does not
-        calculate behavioral or system intelligence.
         """
 
         return jsonify(
@@ -179,8 +200,8 @@ class FlaskGateway:
 
     def analyze_event(self):
         """
-        Receive an event request and forward it to the injected
-        Python processing boundary.
+        Receive an event request and forward it to the
+        injected Python processing boundary.
         """
 
         if not self._is_authorized():
@@ -190,7 +211,7 @@ class FlaskGateway:
                 }
             ), 403
 
-        payload = self._validate_json_object()
+        payload = self._get_json_payload()
 
         if payload is None:
             return jsonify(
@@ -198,6 +219,20 @@ class FlaskGateway:
                     "error": "Request must contain a JSON object.",
                 }
             ), 400
+
+        validation = self._validator.validate(payload)
+
+        if not validation.valid:
+            response = {
+                "error": validation.error,
+            }
+
+            if validation.missing_fields:
+                response["missing_fields"] = list(
+                    validation.missing_fields
+                )
+
+            return jsonify(response), 400
 
         try:
             result = self._event_processor(payload)
@@ -241,15 +276,19 @@ class FlaskGateway:
 
 def create_app(
     event_processor: EventProcessor,
+    validator: Optional[GatewayPayloadValidator] = None,
     authorizer: Optional[RequestAuthorizer] = None,
+    max_content_length: Optional[int] = None,
 ) -> Flask:
     """
-    Application factory for PRISM Flask Gateway.
+    Application factory for the PRISM Flask Gateway.
     """
 
     gateway = FlaskGateway(
         event_processor=event_processor,
+        validator=validator,
         authorizer=authorizer,
+        max_content_length=max_content_length,
     )
 
     return gateway.create_app()
