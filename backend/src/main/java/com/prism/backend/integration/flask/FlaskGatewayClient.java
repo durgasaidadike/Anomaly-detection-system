@@ -63,12 +63,37 @@ public final class FlaskGatewayClient implements FlaskGatewayPort {
             ApiRequestEnvelope<Map<String, Object>> request,
             String correlationId
     ) {
+        return analyzeEvent(
+                request,
+                correlationId,
+                request.requestId()
+        );
+    }
+
+    public CompletableFuture<JsonNode> analyzeEvent(
+            ApiRequestEnvelope<Map<String, Object>> request,
+            String correlationId,
+            String attemptRequestId
+    ) {
         Objects.requireNonNull(request, "request must not be null");
 
         String traceId = requireText(
                 correlationId,
                 "correlationId"
         );
+
+        if (attemptRequestId == null
+                || attemptRequestId.isBlank()) {
+            return CompletableFuture.failedFuture(
+                    failureException(
+                            DownstreamFailureKind.PROTOCOL_FAILURE,
+                            RetryDisposition.NEVER,
+                            FailoverDisposition.NEVER,
+                            null,
+                            traceId
+                    )
+            );
+        }
 
         String requestBody;
 
@@ -114,7 +139,7 @@ public final class FlaskGatewayClient implements FlaskGatewayPort {
 
         headers.put("Content-Type", "application/json");
         headers.put("Accept", "application/json");
-        headers.put("Request-ID", request.requestId());
+        headers.put("Request-ID", attemptRequestId);
         headers.put("Correlation-ID", traceId);
         headers.put("Timestamp", request.timestamp().toString());
 
