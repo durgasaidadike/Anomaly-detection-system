@@ -9,6 +9,7 @@ import com.prism.backend.integration.resilience.DownstreamFailureKind;
 import com.prism.backend.integration.resilience.DownstreamServiceException;
 import com.prism.backend.integration.resilience.FailoverDisposition;
 import com.prism.backend.integration.resilience.RetryDisposition;
+import com.prism.backend.security.ServiceCredentialProvider;
 
 import java.net.ConnectException;
 import java.net.URI;
@@ -30,13 +31,15 @@ public final class FlaskGatewayClient implements FlaskGatewayPort {
     private final Duration timeout;
     private final DownstreamHttpTransport transport;
     private final ObjectMapper objectMapper;
+    private final ServiceCredentialProvider credentialProvider;
 
     public FlaskGatewayClient(
             String serviceName,
             URI baseUri,
             Duration timeout,
             DownstreamHttpTransport transport,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ServiceCredentialProvider credentialProvider
     ) {
         this.serviceName = requireText(serviceName, "serviceName");
         this.baseUri = validateBaseUri(baseUri);
@@ -48,6 +51,10 @@ public final class FlaskGatewayClient implements FlaskGatewayPort {
         this.objectMapper = Objects.requireNonNull(
                 objectMapper,
                 "objectMapper must not be null"
+        );
+        this.credentialProvider = Objects.requireNonNull(
+                credentialProvider,
+                "credentialProvider must not be null"
         );
     }
 
@@ -85,7 +92,26 @@ public final class FlaskGatewayClient implements FlaskGatewayPort {
         }
 
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Authorization", "");
+
+        String authorizationHeader =
+                credentialProvider.authorizationHeader();
+
+        if (authorizationHeader == null
+                || authorizationHeader.isBlank()) {
+            throw failureException(
+                    DownstreamFailureKind.AUTHENTICATION_FAILURE,
+                    RetryDisposition.NEVER,
+                    FailoverDisposition.NEVER,
+                    null,
+                    traceId
+            );
+        }
+
+        headers.put(
+                "Authorization",
+                authorizationHeader
+        );
+
         headers.put("Content-Type", "application/json");
         headers.put("Accept", "application/json");
         headers.put("Request-ID", request.requestId());

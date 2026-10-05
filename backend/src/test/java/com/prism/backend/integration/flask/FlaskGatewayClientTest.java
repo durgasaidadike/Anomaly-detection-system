@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prism.backend.dto.api.ApiRequestEnvelope;
 import com.prism.backend.integration.resilience.DownstreamFailureKind;
 import com.prism.backend.integration.resilience.DownstreamServiceException;
+import com.prism.backend.security.ServiceCredentialProvider;
 import org.junit.jupiter.api.Test;
 
 import java.net.ConnectException;
@@ -23,6 +24,9 @@ class FlaskGatewayClientTest {
 
     private static final ObjectMapper OBJECT_MAPPER =
             new ObjectMapper();
+
+    private static final ServiceCredentialProvider TEST_CREDENTIAL_PROVIDER =
+            () -> "Bearer test-service-token";
 
     @Test
     void successfulRequestReturnsJsonObject() {
@@ -79,6 +83,11 @@ class FlaskGatewayClientTest {
         assertEquals(
                 "2026-10-05T07:30:00Z",
                 transport.headers.get("Timestamp")
+        );
+
+        assertEquals(
+                "Bearer test-service-token",
+                transport.headers.get("Authorization")
         );
 
         assertEquals(
@@ -296,6 +305,62 @@ class FlaskGatewayClientTest {
         );
     }
 
+    @Test
+    void missingServiceCredentialBecomesAuthenticationFailure() {
+
+        FakeTransport transport = new FakeTransport(
+                new DownstreamHttpResponse(
+                        200,
+                        """
+                        {"result":"ok"}
+                        """
+                )
+        );
+
+        ServiceCredentialProvider emptyProvider = () -> "";
+
+        FlaskGatewayClient client = new FlaskGatewayClient(
+                "flask-primary",
+                URI.create(
+                        "http://127.0.0.1:5000"
+                ),
+                Duration.ofSeconds(5),
+                transport,
+                OBJECT_MAPPER,
+                emptyProvider
+        );
+
+        DownstreamServiceException exception =
+                assertThrows(
+                        DownstreamServiceException.class,
+                        () -> client
+                                .analyzeEvent(
+                                        request(),
+                                        "corr-008"
+                                )
+                                .join()
+                );
+
+        assertEquals(
+                DownstreamFailureKind.AUTHENTICATION_FAILURE,
+                exception.failure().kind()
+        );
+
+        assertEquals(
+                "NEVER",
+                exception.failure()
+                        .retryDisposition()
+                        .name()
+        );
+
+        assertEquals(
+                "NEVER",
+                exception.failure()
+                        .failoverDisposition()
+                        .name()
+        );
+    }
+
     private static FlaskGatewayClient client(
             DownstreamHttpTransport transport
     ) {
@@ -306,7 +371,8 @@ class FlaskGatewayClientTest {
                 ),
                 Duration.ofSeconds(5),
                 transport,
-                OBJECT_MAPPER
+                OBJECT_MAPPER,
+                TEST_CREDENTIAL_PROVIDER
         );
     }
 
