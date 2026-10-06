@@ -73,6 +73,37 @@ class BackendArchitectureTest {
     }
 
     @Test
+    void security_must_not_depend_on_controllers_or_repositories() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.prism.backend.security..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.prism.backend.controller..",
+                        "com.prism.backend.repository.."
+                );
+
+        rule.check(BACKEND_CLASSES);
+    }
+
+    @Test
+    void security_must_not_depend_on_flask_or_behavioral_intelligence() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.prism.backend.security..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.prism.backend.integration.flask..",
+                        "com.prism.backend.behavioral..",
+                        "com.prism.backend.intelligence.."
+                );
+
+        rule.check(BACKEND_CLASSES);
+    }
+
+    @Test
     void backend_must_not_depend_on_legacy_java_namespace() {
         ArchRule rule = noClasses()
                 .should()
