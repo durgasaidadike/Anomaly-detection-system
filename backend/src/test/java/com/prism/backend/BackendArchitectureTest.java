@@ -49,6 +49,21 @@ class BackendArchitectureTest {
     }
 
     @Test
+    void controllers_must_not_depend_on_intelligence_packages() {
+        ArchRule rule = noClasses()
+                .that()
+                .resideInAPackage("com.prism.backend.controller..")
+                .should()
+                .dependOnClassesThat()
+                .resideInAnyPackage(
+                        "com.prism.backend.behavioral..",
+                        "com.prism.backend.intelligence.."
+                );
+
+        rule.check(BACKEND_CLASSES);
+    }
+
+    @Test
     void services_must_not_depend_on_controllers() {
         ArchRule rule = noClasses()
                 .that()
