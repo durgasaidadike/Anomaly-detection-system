@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TypedDict
 
-from database import save_baseline
+from persistence_port import PersistencePort
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,8 +46,13 @@ class DirectoryScanner:
     It does not monitor live filesystem changes.
     """
 
-    def __init__(self, directories: Optional[List[str]] = None):
+    def __init__(
+        self,
+        directories: Optional[List[str]] = None,
+        persistence: Optional[PersistencePort] = None
+    ):
         self.directories = directories or []
+        self.persistence = persistence
         self.snapshot = []
         self.valid_directories = set()
         self.invalid_directories = set()
@@ -177,12 +182,21 @@ class DirectoryScanner:
                         full_path,
                         True
                     )
-                    snapshot["entries"].append(metadata)
-                    snapshot["total_directories"] += 1
-                    self.total_directories += 1
+                except OSError as exc:
+                    error_message = (
+                        f"FILESYSTEM_SCAN_FAILED: "
+                        f"{directory_name} ({type(exc).__name__})"
+                    )
+                    snapshot["scan_errors"].append(error_message)
+                    logger.exception(
+                        "Failed to scan directory '%s'",
+                        directory_name
+                    )
+                    continue
 
-                except Exception as e:
-                    logger.error(f"Failed to scan directory '{directory_name}': {e}")
+                snapshot["entries"].append(metadata)
+                snapshot["total_directories"] += 1
+                self.total_directories += 1
 
             for file_name in files:
                 full_path = os.path.join(root, file_name)
@@ -193,14 +207,40 @@ class DirectoryScanner:
                         full_path,
                         False
                     )
-                    snapshot["entries"].append(metadata)
-                    snapshot["total_files"] += 1
-                    self.total_files += 1
-                    save_baseline(metadata)
-                    logger.info(f"Baseline created for file: {file_name}")
+                except OSError as exc:
+                    error_message = (
+                        f"FILESYSTEM_SCAN_FAILED: "
+                        f"{file_name} ({type(exc).__name__})"
+                    )
+                    snapshot["scan_errors"].append(error_message)
+                    logger.exception(
+                        "Failed to scan file '%s'",
+                        file_name
+                    )
+                    continue
 
-                except Exception as e:
-                    logger.error(f"Failed to scan file '{file_name}': {e}")
+                # Scanning succeeded independently of persistence.
+                snapshot["entries"].append(metadata)
+                snapshot["total_files"] += 1
+                self.total_files += 1
+
+                if self.persistence is None:
+                    logger.debug(
+                        "Persistence not configured for file '%s'",
+                        file_name
+                    )
+                    continue
+
+                try:
+                    self.persistence.save_baseline_entry(metadata)
+                    logger.info(f"Baseline created for file: {file_name}")
+                except Exception as exc:
+                    error_message = (
+                        f"BASELINE_PERSISTENCE_FAILED: "
+                        f"{file_name} ({type(exc).__name__})"
+                    )
+                    snapshot["scan_errors"].append(error_message)
+                    logger.error(error_message)
 
         self.snapshot.append(snapshot)
         return snapshot
@@ -231,11 +271,14 @@ class DirectoryScanner:
 
 
 if __name__ == "__main__":
+    from database import MongoDBPersistence
+
     WATCHED_FOLDERS = [
         r"C:\projects\watched-folder"
     ]
 
-    scanner = DirectoryScanner(WATCHED_FOLDERS)
+    persistence = MongoDBPersistence()
+    scanner = DirectoryScanner(WATCHED_FOLDERS, persistence=persistence)
     scanner.scan()
 
     stats = scanner.get_statistics()

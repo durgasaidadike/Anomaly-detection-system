@@ -71,6 +71,7 @@ FORBIDDEN_PERSISTENCE_IMPORTS = {
     "mongodb",
     "database",
     "persistence",
+    "persistence_port",
 }
 
 FORBIDDEN_ML_IMPORTS = {

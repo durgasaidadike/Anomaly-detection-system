@@ -88,6 +88,9 @@ def test_feature_extractor_has_no_forbidden_ml_or_persistence_imports():
         "motor",
         "sqlalchemy",
         "flask",
+        "database",
+        "persistence",
+        "persistence_port",
     }
 
     imported_roots: set[str] = set()
@@ -105,9 +108,7 @@ def test_feature_extractor_has_no_forbidden_ml_or_persistence_imports():
                     node.module.split(".", maxsplit=1)[0]
                 )
 
-    forbidden_imports = (
-        imported_roots & forbidden_roots
-    )
+    forbidden_imports = imported_roots & forbidden_roots
 
     assert forbidden_imports == set()
 

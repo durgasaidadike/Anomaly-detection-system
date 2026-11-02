@@ -125,6 +125,8 @@ def test_ml_engine_has_no_forbidden_imports():
                     )
 
     assert not violations, violations
+
+
 def test_ml_engine_has_no_training_operations():
     violations = []
 

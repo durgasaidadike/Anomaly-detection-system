@@ -31,6 +31,8 @@ FORBIDDEN_IMPORT_ROOTS = {
     "sqlalchemy",
     "sqlite3",
     "database",
+    "persistence",
+    "persistence_port",
     "model",
     "utils",
     "decision",

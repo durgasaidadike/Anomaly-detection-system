@@ -64,6 +64,8 @@ FORBIDDEN_IMPORT_TOKENS = {
     "drift_engine",
     "confidence_engine",
     "behavior_analyzer",
+    "database",
+    "persistence",
 }
 
 FORBIDDEN_SOURCE_TOKENS = (
@@ -112,6 +114,9 @@ FORBIDDEN_PERSISTENCE_MODULES = {
     "pymongo",
     "sqlalchemy",
     "motor",
+    "database",
+    "persistence",
+    "persistence_port",
 }
 
 
@@ -153,15 +158,16 @@ def test_all_backup_source_files_exist():
 def test_backup_layer_has_no_forbidden_imports():
     violations = []
     for filename in BACKUP_FILES:
-        if filename == FILESYSTEM_STORAGE_FILE:
-            # The storage implementation is allowed the
-            # filesystem primitives the others are denied.
-            continue
         imported = imported_modules(read_tree(filename))
+        forbidden_tokens = set(FORBIDDEN_IMPORT_TOKENS)
+        if filename == FILESYSTEM_STORAGE_FILE:
+            # This file may use shutil for physical storage.
+            # It is still forbidden from database access.
+            forbidden_tokens.discard("shutil")
         forbidden = {
             module
             for module in imported
-            for token in FORBIDDEN_IMPORT_TOKENS
+            for token in forbidden_tokens
             if token in module
         }
         if forbidden:
