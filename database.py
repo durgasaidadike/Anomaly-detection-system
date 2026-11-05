@@ -1,8 +1,75 @@
-from pymongo import MongoClient
-from datetime import datetime, timezone
 import copy
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+from pymongo import MongoClient
 
 from persistence_port import PersistencePort
+
+DEFAULT_MONGODB_URI = "mongodb://localhost:27017/"
+DEFAULT_MONGODB_DATABASE = "anomaly_detection"
+DEFAULT_MONGODB_SERVER_SELECTION_TIMEOUT_MS = 5000
+
+
+def _resolve_string_setting(
+    explicit_value: Optional[str],
+    environment_variable: str,
+    default_value: str,
+) -> str:
+    value = (
+        explicit_value
+        if explicit_value is not None
+        else os.getenv(environment_variable, default_value)
+    )
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"{environment_variable} must be a non-empty string"
+        )
+    return value.strip()
+
+
+def _resolve_timeout_setting(
+    explicit_value: Optional[int],
+) -> int:
+    if explicit_value is not None:
+        if isinstance(explicit_value, bool):
+            raise ValueError(
+                "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS must be a positive integer"
+            )
+        if isinstance(explicit_value, int):
+            timeout = explicit_value
+        elif isinstance(explicit_value, str):
+            try:
+                timeout = int(explicit_value)
+            except ValueError:
+                raise ValueError(
+                    "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS must be a positive integer"
+                )
+        else:
+            raise ValueError(
+                "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS must be a positive integer"
+            )
+    else:
+        raw_value = os.getenv(
+            "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS"
+        )
+        if raw_value is None:
+            timeout = DEFAULT_MONGODB_SERVER_SELECTION_TIMEOUT_MS
+        else:
+            try:
+                timeout = int(raw_value)
+            except ValueError:
+                raise ValueError(
+                    "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS must be a positive integer"
+                )
+
+    if timeout <= 0:
+        raise ValueError(
+            "PRISM_MONGODB_SERVER_SELECTION_TIMEOUT_MS must be a positive integer"
+        )
+
+    return timeout
 
 
 class MongoDBPersistence(PersistencePort):
@@ -17,21 +84,45 @@ class MongoDBPersistence(PersistencePort):
 
     def __init__(
         self,
-        connection_string: str = "mongodb://localhost:27017/",
-        database_name: str = "anomaly_detection",
-        server_selection_timeout_ms: int = 5000
+        connection_string: Optional[str] = None,
+        database_name: Optional[str] = None,
+        server_selection_timeout_ms: Optional[int] = None,
     ):
-        self._client = MongoClient(
+        self._connection_string = _resolve_string_setting(
             connection_string,
-            serverSelectionTimeoutMS=server_selection_timeout_ms
+            "PRISM_MONGODB_URI",
+            DEFAULT_MONGODB_URI,
         )
-        self._db = self._client[database_name]
-
+        self._database_name = _resolve_string_setting(
+            database_name,
+            "PRISM_MONGODB_DATABASE",
+            DEFAULT_MONGODB_DATABASE,
+        )
+        self._server_selection_timeout_ms = (
+            _resolve_timeout_setting(
+                server_selection_timeout_ms
+            )
+        )
+        self._client = MongoClient(
+            self._connection_string,
+            serverSelectionTimeoutMS=(
+                self._server_selection_timeout_ms
+            ),
+        )
+        self._db = self._client[self._database_name]
         self._events_collection = self._db["events"]
-        self._baseline_inventory_collection = self._db["baseline_inventory"]
-        self._directory_snapshots_collection = self._db["directory_snapshots"]
-        self._directory_validations_collection = self._db["directory_validations"]
-        self._watcher_registrations_collection = self._db["watcher_registrations"]
+        self._baseline_inventory_collection = (
+            self._db["baseline_inventory"]
+        )
+        self._directory_snapshots_collection = (
+            self._db["directory_snapshots"]
+        )
+        self._directory_validations_collection = (
+            self._db["directory_validations"]
+        )
+        self._watcher_registrations_collection = (
+            self._db["watcher_registrations"]
+        )
 
     def _utc_now(self) -> datetime:
         return datetime.now(timezone.utc)
