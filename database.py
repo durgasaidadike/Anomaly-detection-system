@@ -1,3 +1,4 @@
+import atexit
 import copy
 import os
 from datetime import datetime, timezone
@@ -110,6 +111,7 @@ class MongoDBPersistence(PersistencePort):
             ),
         )
         self._db = self._client[self._database_name]
+        self._closed = False
         self._events_collection = self._db["events"]
         self._baseline_inventory_collection = (
             self._db["baseline_inventory"]
@@ -124,34 +126,65 @@ class MongoDBPersistence(PersistencePort):
             self._db["watcher_registrations"]
         )
 
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError(
+                "MongoDBPersistence client is already closed"
+            )
+
+    def verify_connection(self) -> None:
+        """Verify MongoDB availability using an explicit ping."""
+        self._ensure_open()
+        self._client.admin.command("ping")
+
+    def close(self) -> None:
+        """Close the MongoDB client safely and only once."""
+        if self._closed:
+            return
+        self._client.close()
+        self._closed = True
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
+        return False
+
     def _utc_now(self) -> datetime:
         return datetime.now(timezone.utc)
 
     def save_event(self, event_data: dict) -> str:
+        self._ensure_open()
         document = copy.deepcopy(event_data)
         document["timestamp"] = self._utc_now()
         result = self._events_collection.insert_one(document)
         return str(result.inserted_id)
 
     def save_baseline_entry(self, entry_data: dict) -> str:
+        self._ensure_open()
         document = copy.deepcopy(entry_data)
         document["persisted_at"] = self._utc_now()
         result = self._baseline_inventory_collection.insert_one(document)
         return str(result.inserted_id)
 
     def save_directory_snapshot(self, snapshot_data: dict) -> str:
+        self._ensure_open()
         document = copy.deepcopy(snapshot_data)
         document["persisted_at"] = self._utc_now()
         result = self._directory_snapshots_collection.insert_one(document)
         return str(result.inserted_id)
 
     def save_validation_result(self, validation_data: dict) -> str:
+        self._ensure_open()
         document = copy.deepcopy(validation_data)
         document["persisted_at"] = self._utc_now()
         result = self._directory_validations_collection.insert_one(document)
         return str(result.inserted_id)
 
     def save_watcher_registration(self, registration_data: dict) -> str:
+        self._ensure_open()
         document = copy.deepcopy(registration_data)
         document["persisted_at"] = self._utc_now()
         result = self._watcher_registrations_collection.insert_one(document)
@@ -160,6 +193,17 @@ class MongoDBPersistence(PersistencePort):
 
 # Default instance for backward compatibility
 _default_persistence = MongoDBPersistence()
+
+
+def get_default_persistence() -> MongoDBPersistence:
+    return _default_persistence
+
+
+def close_default_persistence() -> None:
+    _default_persistence.close()
+
+
+atexit.register(close_default_persistence)
 
 
 # Module-level functions for backward compatibility (legacy code support)

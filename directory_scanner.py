@@ -271,13 +271,13 @@ class DirectoryScanner:
 
 
 if __name__ == "__main__":
-    from database import MongoDBPersistence
+    from database import get_default_persistence
 
     WATCHED_FOLDERS = [
         r"C:\projects\watched-folder"
     ]
 
-    persistence = MongoDBPersistence()
+    persistence = get_default_persistence()
     scanner = DirectoryScanner(WATCHED_FOLDERS, persistence=persistence)
     scanner.scan()
 
