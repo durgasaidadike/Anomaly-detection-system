@@ -76,7 +76,10 @@ export default function useBackendHealth() {
   useEffect(() => {
     isMounted.current = true
 
-    refresh()
+    // Defer initial refresh to avoid synchronous setState in effect
+    const timeoutId = window.setTimeout(() => {
+      refresh()
+    }, 0)
 
     const intervalId = window.setInterval(
       refresh,
@@ -85,6 +88,7 @@ export default function useBackendHealth() {
 
     return () => {
       isMounted.current = false
+      window.clearTimeout(timeoutId)
       window.clearInterval(intervalId)
     }
   }, [refresh])

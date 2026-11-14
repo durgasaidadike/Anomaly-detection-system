@@ -11,7 +11,6 @@ import {
   FileText,
   Folder,
   FolderKanban,
-  HardDrive,
   House,
   Layers3,
   RotateCcw,
