@@ -118,10 +118,12 @@ def test_get_default_persistence_returns_singleton():
     assert p1 is p2
 
 
-def test_close_default_persistence_closes_singleton():
-    default = database.get_default_persistence()
-    original_closed = default._closed
-
+def test_close_default_persistence_closes_singleton(monkeypatch):
+    mock_persistence = MagicMock()
+    monkeypatch.setattr(
+        database,
+        "_default_persistence",
+        mock_persistence,
+    )
     database.close_default_persistence()
-
-    assert default._closed is True
+    mock_persistence.close.assert_called_once()

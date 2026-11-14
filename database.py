@@ -31,7 +31,7 @@ def _resolve_string_setting(
 
 
 def _resolve_timeout_setting(
-    explicit_value: Optional[int],
+    explicit_value: Optional[int | str],
 ) -> int:
     if explicit_value is not None:
         if isinstance(explicit_value, bool):
